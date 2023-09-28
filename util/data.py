@@ -19,6 +19,11 @@ def get_data(args: argparse.Namespace):
     np.random.seed(args.seed)
     if args.dataset =='CUB-200-2011':     
         return get_birds(True, './data/CUB_200_2011/dataset/train_crop', './data/CUB_200_2011/dataset/train', './data/CUB_200_2011/dataset/test_crop', args.image_size, args.seed, args.validation_size, './data/CUB_200_2011/dataset/train', './data/CUB_200_2011/dataset/test_full')
+    
+    if args.dataset == 'MNIST':
+        return get_digits(True, 
+'./data/MNIST/dataset/train','./data/MNIST/dataset/train','./data/MNIST/dataset/test', args.image_size, args.seed, args.validation_size)
+    
     if args.dataset == 'pets':
         return get_pets(True, './data/PETS/dataset/train','./data/PETS/dataset/train','./data/PETS/dataset/test', args.image_size, args.seed, args.validation_size)
     if args.dataset == 'partimagenet': #use --validation_size of 0.2
@@ -207,6 +212,37 @@ def get_pets(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_si
         transform2 = transform_no_augment           
 
     return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
+
+def get_digits(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
+    mean = (0.485, 0.456, 0.406)
+    std = (0.229, 0.224, 0.225)
+    normalize = transforms.Normalize(mean=mean,std=std)
+    transform_no_augment = transforms.Compose([
+                            transforms.Resize(size=(img_size, img_size)),
+                            transforms.ToTensor(),
+                            normalize
+                        ])
+    
+    if augment:
+        transform1 = transforms.Compose([
+            transforms.Resize(size=(img_size+48, img_size+48)), 
+            TrivialAugmentWideNoColor(),
+            #transforms.RandomHorizontalFlip(),
+            transforms.RandomResizedCrop(img_size+8, scale=(0.95, 1.))
+        ])
+        
+        transform2 = transforms.Compose([
+        TrivialAugmentWideNoShape(),
+        transforms.RandomCrop(size=(img_size, img_size)), #includes crop
+        transforms.ToTensor(),
+        normalize
+        ])
+    else:
+        transform1 = transform_no_augment    
+        transform2 = transform_no_augment           
+
+    return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
+
 
 def get_partimagenet(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
     # Validation size was set to 0.2, such that 80% of the data is used for training

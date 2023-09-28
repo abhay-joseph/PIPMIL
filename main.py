@@ -329,7 +329,7 @@ def run_pipnet(args=None):
 
 
     # EVALUATE OOD DETECTION
-    ood_datasets = ["CARS", "CUB-200-2011", "pets"]
+    ood_datasets = ["CUB-200-2011","MNIST"]
     for percent in [95.]:
         print("\nOOD Evaluation for epoch", epoch,"with percent of", percent, flush=True)
         _, _, _, class_thresholds = get_thresholds(net, testloader, epoch, device, percent, log)
