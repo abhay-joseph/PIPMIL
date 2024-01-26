@@ -110,9 +110,11 @@ def eval_pipnet(net,
         try:
             for classname, classidx in test_loader.dataset.class_to_idx.items(): 
                 if classidx == 0:
-                    print("Accuracy positive class (", classname, classidx,") (TPR, Sensitivity):", tp/(tp+fn))
+                    # print("Accuracy positive class (", classname, classidx,") (TPR, Sensitivity):", tp/(tp+fn))
+                    print("Accuracy negative class (", classname, classidx,") (TNR, Sensitivity):", tp/(tp+fn))
                 elif classidx == 1:
-                    print("Accuracy negative class (", classname, classidx,") (TNR, Specificity):", tn/(tn+fp))
+                    # print("Accuracy negative class (", classname, classidx,") (TNR, Specificity):", tn/(tn+fp))
+                    print("Accuracy positive class (", classname, classidx,") (TPR, Specificity):", tn/(tn+fp))
         except ValueError:
             pass
         print("Balanced accuracy: ", balanced_accuracy_score(y_trues, y_preds_classes),flush=True)

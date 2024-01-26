@@ -8,6 +8,7 @@ import torch
 from util.vis_pipnet import get_img_coordinates
 import matplotlib.pyplot as plt
 import numpy as np
+from util.data import MultipleInstanceDataset, InstanceStack
 
 try:
     import cv2
@@ -36,7 +37,8 @@ def vis_pred(net, vis_test_dir, classes, device, args: argparse.Namespace):
                             transforms.ToTensor(),
                             normalize])
 
-    vis_test_set = torchvision.datasets.ImageFolder(vis_test_dir, transform=transform_no_augment)
+    #vis_test_set = torchvision.datasets.ImageFolder(vis_test_dir, transform=transform_no_augment)
+    vis_test_set = InstanceStack(MultipleInstanceDataset(vis_test_dir), transform=transform_no_augment)
     vis_test_loader = torch.utils.data.DataLoader(vis_test_set, batch_size = 1,
                                                 shuffle=False, pin_memory=not args.disable_cuda and torch.cuda.is_available(),
                                                 num_workers=num_workers)
@@ -79,6 +81,7 @@ def vis_pred(net, vis_test_dir, classes, device, args: argparse.Namespace):
                         max_idx_w = max_idx_w.item()
                         image = transforms.Resize(size=(args.image_size, args.image_size))(Image.open(img))
                         img_tensor = transforms.ToTensor()(image).unsqueeze_(0) #shape (1, 3, h, w)
+                        # convert latent location to coordinates of image patch
                         h_coor_min, h_coor_max, w_coor_min, w_coor_max = get_img_coordinates(args.image_size, softmaxes.shape, patchsize, skip, max_idx_h, max_idx_w)
                         img_tensor_patch = img_tensor[0, :, h_coor_min:h_coor_max, w_coor_min:w_coor_max]
                         img_patch = transforms.ToPILImage()(img_tensor_patch)
@@ -119,7 +122,8 @@ def vis_pred_experiments(net, imgs_dir, classes, device, args: argparse.Namespac
                             transforms.ToTensor(),
                             normalize])
 
-    vis_test_set = torchvision.datasets.ImageFolder(imgs_dir, transform=transform_no_augment)
+    #vis_test_set = torchvision.datasets.ImageFolder(imgs_dir, transform=transform_no_augment)
+    vis_test_set = InstanceStack(MultipleInstanceDataset(imgs_dir), transform=transform_no_augment)
     vis_test_loader = torch.utils.data.DataLoader(vis_test_set, batch_size = 1,
                                                 shuffle=False, pin_memory=not args.disable_cuda and torch.cuda.is_available(),
                                                 num_workers=num_workers)

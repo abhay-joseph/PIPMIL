@@ -1,0 +1,59 @@
+base_architecture='resnet18_small',
+img_size=32,
+prototype_number=20,
+prototype_latent=256,
+prototype_conv_dim=(2, 2),
+joint_optimizer_lrs={
+    'features': 1e-5,
+    'add_on_layers': 1e-5,
+    'prototype_vectors': 1e-5,
+},
+joint_lr_step_size=10,
+joint_lr_gamma=0.1,
+warm_optimizer_lrs={
+    'features': 1e-2,
+    'add_on_layers': 1e-2,
+    'prototype_vectors': 1e-2,
+    'attention': 1e-2,
+    'last_layer': 1e-2,
+},
+warm_lr_gamma=0.95,
+last_layer_optimizer_lr={
+    'attention': 1e-3,
+    'last_layer': 1e-4,
+},
+num_train_epochs=101,
+num_warm_epochs=60,
+num_last_layer_iterations=20,
+push_start=60,
+push_epochs=[i for i in range(200) if i % 20 == 0]
+
+
+----------------------------------------------------------------------------------------
+
+dataset: 'Bisque'
+validation_size: 0.0
+net: 'resnet18'
+batch_size: 5
+batch_size_pretrain: 10
+epochs: 60
+optimizer: 'Adam'
+lr: 0.05
+lr_block: 0.0005
+lr_net: 0.0005
+weight_decay: 0.0
+disable_cuda: False
+log_dir: './runs/pipnet_bisque_cnext26'
+num_features: 0
+image_size: 32
+state_dict_dir_net: ''
+freeze_epochs: 10
+dir_for_saving_images: 'Visualization_results'
+disable_pretrained: False
+epochs_pretrain: 10
+weighted_loss: False
+seed: 1
+gpu_ids: ''
+num_workers: 8
+bias: False
+

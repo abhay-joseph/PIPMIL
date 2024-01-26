@@ -1,4 +1,5 @@
 from pipnet.pipnet import PIPNet, get_network
+from pipnet.pipmil import PIPMIL, get_network_MIL
 from util.log import Log
 import torch.nn as nn
 from util.args import get_args, save_args, get_optimizer_nn
@@ -67,12 +68,22 @@ def run_pipnet(args=None):
             print("Classes: ", testloader.dataset.class_to_idx, flush=True)
         else:
             print("Classes: ", str(classes), flush=True)
-    
+
     # Create a convolutional network based on arguments and add 1x1 conv layer
-    feature_net, add_on_layers, pool_layer, classification_layer, num_prototypes = get_network(len(classes), args)
+    feature_net, add_on_layers, pool_layer, classification_layer, num_prototypes = get_network_MIL(len(classes), args)
    
-    # Create a PIP-Net
-    net = PIPNet(num_classes=len(classes),
+    # # Create a PIP-Net
+    # net = PIPNet(num_classes=len(classes),
+    #                 num_prototypes=num_prototypes,
+    #                 feature_net = feature_net,
+    #                 args = args,
+    #                 add_on_layers = add_on_layers,
+    #                 pool_layer = pool_layer,
+    #                 classification_layer = classification_layer
+    #                 )
+
+    # Create a PIPMIL Net
+    net = PIPMIL(num_classes=len(classes),
                     num_prototypes=num_prototypes,
                     feature_net = feature_net,
                     args = args,
@@ -80,6 +91,7 @@ def run_pipnet(args=None):
                     pool_layer = pool_layer,
                     classification_layer = classification_layer
                     )
+
     net = net.to(device=device)
     net = nn.DataParallel(net, device_ids = device_ids)    
     
@@ -321,7 +333,10 @@ def run_pipnet(args=None):
     # visualize predictions 
     visualize(net, projectloader, len(classes), device, 'visualised_prototypes', args)
     testset_img0_path = test_projectloader.dataset.samples[0][0]
-    test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
+    # single instance
+    # test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
+    # MIL
+    test_path = os.path.split(os.path.split(os.path.split(testset_img0_path)[0])[0])[0]
     vis_pred(net, test_path, classes, device, args) 
     if args.extra_test_image_folder != '':
         if os.path.exists(args.extra_test_image_folder):   
@@ -329,7 +344,8 @@ def run_pipnet(args=None):
 
 
     # EVALUATE OOD DETECTION
-    ood_datasets = ["CUB-200-2011","MNIST"]
+    # ood_datasets = ["CUB-200-2011","MNIST"]
+    ood_datasets = ["Bisque"]
     for percent in [95.]:
         print("\nOOD Evaluation for epoch", epoch,"with percent of", percent, flush=True)
         _, _, _, class_thresholds = get_thresholds(net, testloader, epoch, device, percent, log)
