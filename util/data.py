@@ -1,5 +1,6 @@
 import numpy as np
 import argparse
+import csv
 import os
 from PIL import Image
 from torch.utils.data import Dataset
@@ -7,6 +8,8 @@ import torch
 import torch.optim
 import torch.utils.data
 import torchvision
+from torchvision.datasets.folder import pil_loader
+from torchvision.transforms.functional import to_tensor
 import torchvision.transforms as transforms
 from typing import Tuple, Dict
 from torch import Tensor
@@ -58,6 +61,130 @@ class MultipleInstanceDataset(Dataset):
     def get_instances_list(self):
         return self.imgs
 
+class CamelyonPreprocessedBags(Dataset):
+    def __init__(self, path, transform=None, train=True, random_state=3, max_bag=20000):
+        self.path = path
+        self.train = train
+        self.transform = transform
+        self.random_state = random_state
+        # self.push = push
+        # self.all_labels = all_labels
+        # self.shuffle_bag = shuffle_bag
+        # self.data_augmentation = data_augmentation
+        # self.location_info = loc_info
+        self.r = np.random.RandomState(random_state)
+        self.max_bag = max_bag
+
+        self.full_labels = {}        
+        for i in range(1,161):
+            self.full_labels['normal_{:03d}.tif'.format(i)] = 0
+        for i in range(1,112):
+            self.full_labels['tumor_{:03d}.tif'.format(i)] = 1
+        with open(os.path.join(path, 'reference.csv')) as f:
+            reader = csv.DictReader(f, delimiter=',')
+            for row in reader:
+                self.full_labels[str(row['slide'])+'.tif'] = 0 if row['label'] == 'Normal' else 1
+        
+        self.classes = list(set(self.full_labels.values()))
+        self.class_to_idx = {cls: i for i, cls in enumerate(self.classes)}
+
+        self.embed_name = 'embeddings.pth'
+        self.imgs = []
+        self.samples = []
+
+        self.dir_list = [d for d in self.full_labels.keys() if os.path.exists(os.path.join(path, d))]
+        # using pretrained embeddings
+        #self.dir_list = [d for d in self.full_labels.keys() if os.path.exists(os.path.join(path, d, self.embed_name))]
+        if self.train:
+            self.dir_list = [d for d in self.dir_list if 'test' not in d]
+            self.bags = [(os.path.join(path, k), v) for k, v in self.full_labels.items() if 'test' not in k]
+            self.labels = {b_name: self.full_labels[b_name] for b_name in self.full_labels.keys() if 'test' not in b_name}
+        else:
+            self.dir_list = [d for d in self.dir_list if 'test' in d]
+            self.bags = [(os.path.join(path, k), v) for k, v in self.full_labels.items() if 'test' in k]
+            self.labels = {b_name: self.full_labels[b_name] for b_name in self.full_labels.keys() if 'test' in b_name}
+
+        
+        for bag_path, bag_label in self.bags:
+            instance_paths = [(os.path.join(root, file), bag_label) for root, _, files in os.walk(bag_path) for file in files if file.endswith('.jpg')]
+            if len(instance_paths) > self.max_bag:
+                if self.train:
+                    rng = np.random
+                else:
+                    rng = np.random.default_rng(3)
+                indices = rng.permutation(len(instance_paths))[:self.max_bag]
+            else:
+                indices = np.arange(0, len(instance_paths))
+                
+            select_instance_paths = [instance_paths[index] for index in indices]
+            self.imgs += select_instance_paths
+            self.samples += select_instance_paths
+
+    def __len__(self):
+        return len(self.bags)
+
+    def __getitem__(self, idx):
+        bag_path, class_label = self.bags[idx]
+
+        # Load all instances in the bag
+        instances = [Image.open(instance_path) for instance_path, _ in self.imgs if bag_path in instance_path]
+
+        # Apply transformations if needed
+        if self.transform:
+            instances = [self.transform(instance) for instance in instances]
+
+        # Determine the label based on the class label (negative or positive)
+        bag_label = class_label  # Assume bag label is the same as class label
+
+        return instances, bag_label
+    
+    def get_instances_list(self):
+        return self.imgs
+
+    # @classmethod
+    # def load_raw_image(cls, path):
+    #     return to_tensor(pil_loader(path))
+
+    # class LazyLoader:
+    #     def __init__(self, path, dir, indices):
+    #         self.path = path
+    #         self.dir = dir
+    #         self.indices = indices
+
+    #     def __getitem__(self, item):
+    #         return CamelyonPreprocessedBags.load_raw_image(
+    #             os.path.join(self.path, self.dir, 'patch.{}.jpg'.format(int(self.indices[item]))))
+
+    # def __len__(self):
+    #     return len(self.dir_list)
+
+    # def __getitem__(self, index):
+    #     dir = self.dir_list[index]
+    #     try:
+    #         bag = torch.load(os.path.join(self.path, dir, self.embed_name))
+    #     except:
+    #         print(dir)
+    #         raise
+
+    #     if bag.shape[0] > self.max_bag:
+    #         if self.train:
+    #             rng = np.random
+    #         else:
+    #             rng = np.random.default_rng(3)
+    #         indices = rng.permutation(bag.shape[0])[:self.max_bag]
+    #         bag = bag[indices].detach().clone()
+    #     else:
+    #         indices = np.arange(0, bag.shape[0])
+    #     if self.all_labels:
+    #         label = torch.LongTensor([self.labels[dir]] * bag.shape[0])
+    #     else:
+    #         label = torch.LongTensor([self.labels[dir]]).max().unsqueeze(0)
+
+    #     if self.push:
+    #         return self.LazyLoader(self.path, dir, indices), bag, label
+    #     else:
+    #         return bag, label
+
 def create_datasets_MIL(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
     
     trainvalset = MultipleInstanceDataset(train_dir)
@@ -103,6 +230,52 @@ def create_datasets_MIL(transform1, transform2, transform_no_augment, num_channe
     
     return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
 
+def create_datasets_CAMELYON(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
+    
+    trainvalset = CamelyonPreprocessedBags(train_dir, train=True)
+    classes = trainvalset.classes
+    targets = [label for _, label in trainvalset.bags]
+    indices = list(range(len(trainvalset)))
+
+    train_indices = indices
+    
+    if test_dir is None:
+        if validation_size <= 0.:
+            raise ValueError("There is no test set directory, so validation size should be > 0 such that the training set can be split.")
+        subset_targets = list(np.array(targets)[train_indices])
+        train_indices, test_indices = train_test_split(train_indices, test_size=validation_size, stratify=subset_targets, random_state=seed)
+        testset = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir, train=True), transform=transform_no_augment), indices=test_indices)
+        print("Samples in trainset:", len(indices), "of which", len(train_indices), "for training and ", len(test_indices), "for testing.", flush=True)
+    else:
+        testset = InstanceStack_CAMELYON(CamelyonPreprocessedBags(test_dir, train=False), transform=transform_no_augment)
+    
+    trainset = torch.utils.data.Subset(TwoAugSupervisedDataset_CAMELYON(trainvalset, transform1=transform1, transform2=transform2), indices=train_indices)
+    trainset_normal = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir, train=True), transform=transform_no_augment), indices=train_indices)
+    trainset_normal_augment = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir, train=True), transform=transforms.Compose([transform1, transform2])), indices=train_indices)
+    projectset = InstanceStack_CAMELYON(CamelyonPreprocessedBags(project_dir), transform=transform_no_augment)
+
+    if test_dir_projection is not None:
+        testset_projection = InstanceStack_CAMELYON(CamelyonPreprocessedBags(test_dir_projection, train=False), transform=transform_no_augment)
+    else:
+        testset_projection = testset
+
+    if train_dir_pretrain is not None:
+        trainvalset_pr = InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir_pretrain, train=True))
+        targets_pr = trainvalset_pr.targets
+        indices_pr = trainvalset_pr.indices
+        train_indices_pr = indices_pr
+
+        if test_dir is None:
+            subset_targets_pr = list(np.array(targets_pr)[indices_pr])
+            train_indices_pr, test_indices_pr = train_test_split(indices_pr, test_size=validation_size, stratify=subset_targets_pr, random_state=seed)
+
+        trainset_pretraining = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir_pretrain, train=True), transform=transforms.Compose([transform1p, transform2])), indices=train_indices_pr)
+    else:
+        trainset_pretraining = None
+    
+    return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
+
+
 def get_data(args: argparse.Namespace): 
     """
     Load the proper dataset based on the parsed arguments
@@ -130,6 +303,14 @@ def get_data(args: argparse.Namespace):
         return get_bisque(True, 
         './data/Bisque/dataset/train','./data/Bisque/dataset/train','./data/Bisque/dataset/test', img_size = 32, seed = args.seed, validation_size = args.validation_size)
     
+    if args.dataset == 'CAMELYON':
+        return get_camelyon(True, 
+        '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
+        '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
+        '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
+        img_size = 224, seed = args.seed, validation_size = args.validation_size)
+    
+
     raise Exception(f'Could not load data set, data set "{args.dataset}" not found!')
 
 def get_dataloaders(args: argparse.Namespace, device):
@@ -515,6 +696,63 @@ def get_bisque(augment: bool, train_dir:str, project_dir: str, test_dir:str, img
     return create_datasets_MIL(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
     #return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
 
+def get_camelyon(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
+    shape = (3, img_size, img_size)
+    mean = (0.485, 0.456, 0.406)
+    std = (0.229, 0.224, 0.225)
+
+    transform_no_augment = transforms.Compose([transforms.Resize(size=(img_size, img_size)),
+                                               HistoNormalize(),
+                                               transforms.ToTensor()
+                                               ])
+    
+    if augment:
+        transform1 = transforms.Compose([RandomRotate(),
+                                         transforms.RandomVerticalFlip(),
+                                         transforms.RandomHorizontalFlip(),
+                                         transforms.ToTensor(),
+                                         ])
+        
+        transform2 = transforms.Compose([RandomHEStain(),
+                                         HistoNormalize(),
+                                         transforms.RandomCrop(img_size, padding=(3, 3),padding_mode='reflect'),
+                                         transforms.ToTensor(),
+                                         ])
+
+    else:
+        transform1 = transform_no_augment 
+        transform2 = transform_no_augment           
+
+    return create_datasets_CAMELYON(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
+   
+
+class InstanceStack_CAMELYON(torch.utils.data.Dataset):
+    r"""Returns stacked instances within a bag and a label."""
+    def __init__(self, dataset, transform=None):
+        self.dataset = dataset
+        self.classes = dataset.classes
+        self.class_to_idx = dataset.class_to_idx
+        self.bags = dataset.bags  # Assumes that bags and their labels are stored in the dataset
+        self.targets = [label for _, label in self.bags]  # Assuming bags are (path, label) tuples
+        self.imgs = dataset.imgs
+        self.transform = transform
+        self.samples = dataset.samples
+
+
+    def __getitem__(self, index):
+        bag_path, target = self.bags[index]
+
+        instances = [Image.open(instance_path) for instance_path, _ in self.imgs if bag_path in instance_path]
+        # Apply transformations if needed
+        if self.transform:
+            instances = [self.transform(instance) for instance in instances]
+        instances = torch.stack(instances)
+        
+        return instances, target
+
+    def __len__(self):
+        return len(self.bags)
+
 class InstanceStack(torch.utils.data.Dataset):
     r"""Returns stacked instances within a bag and a label."""
     def __init__(self, dataset, transform=None):
@@ -541,6 +779,32 @@ class InstanceStack(torch.utils.data.Dataset):
         instances = torch.stack(instances)
         
         return instances, target
+
+    def __len__(self):
+        return len(self.bags)
+
+class TwoAugSupervisedDataset_CAMELYON(torch.utils.data.Dataset):
+    r"""Returns two augmentation and no labels."""
+    def __init__(self, dataset, transform1, transform2):
+        self.dataset = dataset
+        self.classes = dataset.classes
+        self.bags = dataset.bags  # Assumes that bags and their labels are stored in the dataset
+        self.targets = [label for _, label in self.bags]  # Assuming bags are (path, label) tuples
+        self.imgs = dataset.imgs
+        self.transform1 = transform1
+        self.transform2 = transform2
+
+
+    def __getitem__(self, index):
+        bag_path, target = self.bags[index]
+        
+        instances = [Image.open(instance_path) for instance_path, _ in self.imgs if bag_path in instance_path]
+
+        # Apply transformations if needed
+        instances = [self.transform1(instance) for instance in instances]
+        instances = [self.transform2(instance) for instance in instances]
+        instances = torch.stack(instances)
+        return instances, instances, target
 
     def __len__(self):
         return len(self.bags)
