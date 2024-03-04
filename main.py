@@ -3,7 +3,7 @@ from pipnet.pipmil import PIPMIL, get_network_MIL
 from util.log import Log
 import torch.nn as nn
 from util.args import get_args, save_args, get_optimizer_nn
-from util.data import get_dataloaders
+from util.data import get_dataloaders, get_dataloaders_CAMELYON
 from util.func import init_weights_xavier
 from pipnet.train import train_pipnet
 from pipnet.test import eval_pipnet, get_thresholds, eval_ood
@@ -62,12 +62,20 @@ def run_pipnet(args=None):
     print("Device used: ", device, "with id", device_ids, flush=True)
     
     # Obtain the dataset and dataloaders
-    trainloader, trainloader_pretraining, trainloader_normal, trainloader_normal_augment, projectloader, testloader, test_projectloader, classes = get_dataloaders(args, device)
-    if len(classes)<=20:
-        if args.validation_size == 0.:
-            print("Classes: ", testloader.dataset.class_to_idx, flush=True)
-        else:
-            print("Classes: ", str(classes), flush=True)
+    if args.dataset == 'CAMELYON':
+        trainloader, trainloader_pretraining, projectloader, testloader, test_projectloader, classes = get_dataloaders_CAMELYON(args, device)
+        if len(classes)<=20:
+            if args.validation_size == 0.:
+                print("Classes: ", testloader.class_to_idx, flush=True)
+            else:
+                print("Classes: ", str(classes), flush=True)
+    else:
+        trainloader, trainloader_pretraining, trainloader_normal, trainloader_normal_augment, projectloader, testloader, test_projectloader, classes = get_dataloaders(args, device)
+        if len(classes)<=20:
+            if args.validation_size == 0.:
+                print("Classes: ", testloader.dataset.class_to_idx, flush=True)
+            else:
+                print("Classes: ", str(classes), flush=True)
 
     # Create a convolutional network based on arguments and add 1x1 conv layer
     feature_net, add_on_layers, pool_layer, classification_layer, num_prototypes = get_network_MIL(len(classes), args)
@@ -304,7 +312,10 @@ def run_pipnet(args=None):
             if proto_weights[p]> 1e-3:
                 relevant_ps.append((p, proto_weights[p].item()))
         if args.validation_size == 0.:
-            print("Class", c, "(", list(testloader.dataset.class_to_idx.keys())[list(testloader.dataset.class_to_idx.values()).index(c)],"):","has", len(relevant_ps),"relevant prototypes: ", relevant_ps, flush=True)
+            if args.dataset == 'CAMELYON':
+                print("Class", c, "(", list(testloader.class_to_idx.keys())[list(testloader.class_to_idx.values()).index(c)],"):","has", len(relevant_ps),"relevant prototypes: ", relevant_ps, flush=True)
+            else:
+                print("Class", c, "(", list(testloader.dataset.class_to_idx.keys())[list(testloader.dataset.class_to_idx.values()).index(c)],"):","has", len(relevant_ps),"relevant prototypes: ", relevant_ps, flush=True)
 
     # Evaluate prototype purity        
     if args.dataset == 'CUB-200-2011':
@@ -332,11 +343,15 @@ def run_pipnet(args=None):
         
     # visualize predictions 
     visualize(net, projectloader, len(classes), device, 'visualised_prototypes', args)
-    testset_img0_path = test_projectloader.dataset.samples[0][0]
-    # single instance
-    # test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
-    # MIL
-    test_path = os.path.split(os.path.split(os.path.split(testset_img0_path)[0])[0])[0]
+    if args.dataset == 'CAMELYON':
+        test_path = '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches'
+    else:
+        testset_img0_path = test_projectloader.dataset.samples[0][0]
+        # single instance
+        # test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
+        # MIL
+        test_path = os.path.split(os.path.split(os.path.split(testset_img0_path)[0])[0])[0]
+        
     vis_pred(net, test_path, classes, device, args) 
     if args.extra_test_image_folder != '':
         if os.path.exists(args.extra_test_image_folder):   
@@ -345,7 +360,7 @@ def run_pipnet(args=None):
 
     # EVALUATE OOD DETECTION
     # ood_datasets = ["CUB-200-2011","MNIST"]
-    ood_datasets = ["Bisque"]
+    ood_datasets = ["CAMELYON"]
     for percent in [95.]:
         print("\nOOD Evaluation for epoch", epoch,"with percent of", percent, flush=True)
         _, _, _, class_thresholds = get_thresholds(net, testloader, epoch, device, percent, log)

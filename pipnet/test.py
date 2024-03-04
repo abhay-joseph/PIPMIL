@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.optim
 from torch.utils.data import DataLoader
+from util.data import MILBagLoader
 import torch.nn.functional as F
 from util.log import Log
 from util.func import topk_accuracy
@@ -10,7 +11,7 @@ from sklearn.metrics import accuracy_score, roc_auc_score, balanced_accuracy_sco
 
 @torch.no_grad()
 def eval_pipnet(net,
-        test_loader: DataLoader,
+        test_loader: MILBagLoader,
         epoch,
         device,
         log: Log = None,  
@@ -86,16 +87,18 @@ def eval_pipnet(net,
         del pooled
         del ys_pred
         
+        del xs, ys
+        
     print("PIP-Net abstained from a decision for", abstained.item(), "images", flush=True)            
     info['num non-zero prototypes'] = torch.gt(net.module._classification.weight,1e-3).any(dim=0).sum().item()
     print("sparsity ratio: ", (torch.numel(net.module._classification.weight)-torch.count_nonzero(torch.nn.functional.relu(net.module._classification.weight-1e-3)).item()) / torch.numel(net.module._classification.weight), flush=True)
     info['confusion_matrix'] = cm
     info['test_accuracy'] = acc_from_cm(cm)
-    info['top1_accuracy'] = global_top1acc/len(test_loader.dataset)
-    info['top5_accuracy'] = global_top5acc/len(test_loader.dataset)
-    info['almost_sim_nonzeros'] = global_sim_anz/len(test_loader.dataset)
-    info['local_size_all_classes'] = local_size_total / len(test_loader.dataset)
-    info['almost_nonzeros'] = global_anz/len(test_loader.dataset)
+    info['top1_accuracy'] = global_top1acc/len(test_loader)
+    info['top5_accuracy'] = global_top5acc/len(test_loader)
+    info['almost_sim_nonzeros'] = global_sim_anz/len(test_loader)
+    info['local_size_all_classes'] = local_size_total / len(test_loader)
+    info['almost_nonzeros'] = global_anz/len(test_loader)
 
     if net.module._num_classes == 2:
         tp = cm[0][0]
@@ -108,7 +111,7 @@ def eval_pipnet(net,
         print("\n Epoch",epoch, flush=True)
         print("Confusion matrix: ", cm, flush=True)
         try:
-            for classname, classidx in test_loader.dataset.class_to_idx.items(): 
+            for classname, classidx in test_loader.class_to_idx.items(): 
                 if classidx == 0:
                     # print("Accuracy positive class (", classname, classidx,") (TPR, Sensitivity):", tp/(tp+fn))
                     print("Accuracy negative class (", classname, classidx,") (TNR, Sensitivity):", tp/(tp+fn))
@@ -126,7 +129,7 @@ def eval_pipnet(net,
         except ValueError:
             pass
     else:
-        info['top5_accuracy'] = global_top5acc/len(test_loader.dataset) 
+        info['top5_accuracy'] = global_top5acc/len(test_loader) 
 
     return info
 
@@ -152,7 +155,7 @@ def acc_from_cm(cm: np.ndarray) -> float:
 @torch.no_grad()
 # Calculates class-specific threshold for the FPR@X metric. Also calculates threshold for images with correct prediction (currently not used, but can be insightful)
 def get_thresholds(net,
-        test_loader: DataLoader,
+        test_loader: MILBagLoader,
         epoch,
         device,
         percentile:float = 95.,
@@ -194,6 +197,8 @@ def get_thresholds(net,
         del out
         del pooled
         del ys_pred
+
+        del xs, ys
 
     class_thresholds = dict()
     correct_class_thresholds = dict()
@@ -242,7 +247,7 @@ def get_thresholds(net,
 
 @torch.no_grad()
 def eval_ood(net,
-        test_loader: DataLoader,
+        test_loader: MILBagLoader,
         epoch,
         device,
         threshold, #class specific threshold or overall threshold. single float is overall, list or dict is class specific 
@@ -289,6 +294,9 @@ def eval_ood(net,
             del out
             del pooled
             del ys_pred
+
+            del xs, ys
+            
     print("Samples seen:", seen, "of which predicted as In-Distribution:", predicted_as_id, flush=True)
     print("PIP-Net abstained from a decision for", abstained.item(), "images", flush=True)
     return predicted_as_id/seen

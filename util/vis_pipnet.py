@@ -77,6 +77,8 @@ def visualize_topk(net, projectloader, num_classes, device, foldername, args: ar
                             replace_choice = random.choice([0, 1])
                             if replace_choice > 0:
                                 topks[p][-1] = (i, pooled[p].item())
+        
+        del xs, ys
 
     alli = []
     prototypes_not_used = []
@@ -133,6 +135,8 @@ def visualize_topk(net, projectloader, num_classes, device, foldername, args: ar
                                         
                                 saved[p]+=1
                                 tensors_per_prototype[p].append(img_tensor_patch)
+
+        del xs, ys
 
     print("Abstained: ", abstained, flush=True)
     all_tensors = []
@@ -261,6 +265,8 @@ def visualize(net, projectloader, num_classes, device, foldername, args: argpars
                     
         
         images_seen_before+=len(ys)
+
+        del xs, ys
 
     print("num images abstained: ", len(abstainedimgs), flush=True)
     print("num images not abstained: ", len(notabstainedimgs), flush=True)

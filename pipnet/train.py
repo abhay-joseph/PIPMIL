@@ -92,6 +92,10 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
                 net.module._classification.normalization_multiplier.copy_(torch.clamp(net.module._classification.normalization_multiplier.data, min=1.0)) 
                 if net.module._classification.bias is not None:
                     net.module._classification.bias.copy_(torch.clamp(net.module._classification.bias.data, min=0.))  
+
+        # Delete batch from memory
+        del xs1, xs2, ys
+        
     train_info['train_accuracy'] = total_acc/float(i+1)
     train_info['loss'] = total_loss/float(i+1)
     train_info['lrs_net'] = lrs_net

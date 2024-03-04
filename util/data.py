@@ -61,17 +61,18 @@ class MultipleInstanceDataset(Dataset):
     def get_instances_list(self):
         return self.imgs
 
-class CamelyonPreprocessedBags(Dataset):
-    def __init__(self, path, transform=None, train=True, random_state=3, max_bag=20000):
+# Custom Dataloader class
+class MILBagLoader:
+    def __init__(self, path, transform1=None, transform2=None, train=True, batch_size=32, shuffle=False, drop_last=False, random_state=3, max_bag=20000):
         self.path = path
         self.train = train
-        self.transform = transform
+        self.transform1 = transform1
+        self.transform2 = transform2
         self.random_state = random_state
-        # self.push = push
-        # self.all_labels = all_labels
-        # self.shuffle_bag = shuffle_bag
-        # self.data_augmentation = data_augmentation
-        # self.location_info = loc_info
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.drop_last = drop_last
+
         self.r = np.random.RandomState(random_state)
         self.max_bag = max_bag
 
@@ -92,189 +93,131 @@ class CamelyonPreprocessedBags(Dataset):
         self.imgs = []
         self.samples = []
 
-        self.dir_list = [d for d in self.full_labels.keys() if os.path.exists(os.path.join(path, d))]
         # using pretrained embeddings
         #self.dir_list = [d for d in self.full_labels.keys() if os.path.exists(os.path.join(path, d, self.embed_name))]
+        
         if self.train:
-            self.dir_list = [d for d in self.dir_list if 'test' not in d]
-            self.bags = [(os.path.join(path, k), v) for k, v in self.full_labels.items() if 'test' not in k]
-            self.labels = {b_name: self.full_labels[b_name] for b_name in self.full_labels.keys() if 'test' not in b_name}
+            self.bags = [(os.path.join(path, k), v) for k, v in self.full_labels.items() if 'test' not in k and os.path.exists(os.path.join(path, k))]
         else:
-            self.dir_list = [d for d in self.dir_list if 'test' in d]
-            self.bags = [(os.path.join(path, k), v) for k, v in self.full_labels.items() if 'test' in k]
-            self.labels = {b_name: self.full_labels[b_name] for b_name in self.full_labels.keys() if 'test' in b_name}
-
+            self.bags = [(os.path.join(path, k), v) for k, v in self.full_labels.items() if 'test' in k and os.path.exists(os.path.join(path, k))]
+            
+        del self.full_labels 
         
         for bag_path, bag_label in self.bags:
             instance_paths = [(os.path.join(root, file), bag_label) for root, _, files in os.walk(bag_path) for file in files if file.endswith('.jpg')]
             if len(instance_paths) > self.max_bag:
-                if self.train:
-                    rng = np.random
-                else:
-                    rng = np.random.default_rng(3)
-                indices = rng.permutation(len(instance_paths))[:self.max_bag]
+                # rng = np.random.default_rng(random_state)
+                indices = self.r.permutation(len(instance_paths))[:self.max_bag]
             else:
                 indices = np.arange(0, len(instance_paths))
                 
             select_instance_paths = [instance_paths[index] for index in indices]
             self.imgs += select_instance_paths
             self.samples += select_instance_paths
+        
+        self.indexes = np.arange(len(self.bags))
+        if self.shuffle:
+            self.r.shuffle(self.indexes)
+
+        self.bag_paths = [paths for paths, _ in self.bags]
+        self.bag_labels = [labels for _, labels in self.bags]  
+
+    def __get_image(self, image):
+
+        image = Image.open(image)
+
+        if self.transform1:
+            image = self.transform1(image)
+        else:
+            transform = transforms.Compose([ 
+                transforms.PILToTensor() 
+            ]) 
+            image = transform(image) 
+
+        return image
+
+    def __get_image_2(self, image):
+
+        if self.transform2:
+            image = self.transform2(image)
+            
+        return image
+        
+    def __get_data(self, bags, labels):
+        batch_bags = []
+        batch_bags_2 = []
+        batch_labels = labels
+        for bag in bags:
+            # loads images within each bag as list of tensors
+            instances = [self.__get_image(instance_path) for instance_path, _ in self.imgs if bag in instance_path]
+            
+            # to return two augmentations in case of trainloader, trainloader_pretrain
+            if self.transform2:
+                instances_1 = [self.transform2(instance) for instance in instances]
+                instances_2 = [self.transform2(instance) for instance in instances]
+                instances_1 = torch.stack(instances_1)
+                instances_2 = torch.stack(instances_2)
+                
+                # padding each bag tensor to len=20000 to maintain uniform dimensions across batch
+                if len(instances_1) < self.max_bag:
+                    pad_size = self.max_bag - len(instances_1)
+                    padding = torch.zeros(pad_size, *instances_1.shape[1:]) # assuming images are 3D tensors (channels, height, width)
+                    instances_1 = torch.cat([instances_1, padding], dim=0)
+                if len(instances_2) < self.max_bag:
+                    pad_size = self.max_bag - len(instances_2)
+                    padding = torch.zeros(pad_size, *instances_2.shape[1:])  
+                    instances_2 = torch.cat([instances_2, padding], dim=0)
+                
+                batch_bags.append(instances_1)
+                batch_bags_2.append(instances_2)
+                
+                del instances
+            
+            else:
+                instances = torch.stack(instances)
+                if len(instances) < self.max_bag:
+                    pad_size = self.max_bag - len(instances)
+                    padding = torch.zeros(pad_size, *instances.shape[1:])
+                    instances = torch.cat([instances, padding], dim=0)
+                batch_bags.append(instances)
+
+        if self.transform2:
+            batch_bags_1 = torch.stack(batch_bags)
+            batch_bags_2 = torch.stack(batch_bags_2)
+            return batch_bags_1, batch_bags_2, batch_labels
+        
+        else:
+            batch_bags = torch.stack(batch_bags)
+            return batch_bags, batch_labels
+
+    def __getitem__(self, index):
+        # Loads select shuffled indices per itration
+        start_index = index * self.batch_size
+        end_index = (index + 1) * self.batch_size
+
+        if self.drop_last and end_index > len(self.bags):
+            raise IndexError("Index out of bounds, as drop_last is enabled.")
+        
+        indexes = self.indexes[start_index:end_index]
+
+        batch_paths = [self.bag_paths[i] for i in indexes]
+        batch_labels = [self.bag_labels[i] for i in indexes]
+
+        if self.transform2:
+            batch_1, batch_2, labels = self.__get_data(batch_paths, batch_labels)
+            return batch_1, batch_2, labels
+        else:
+            batch, labels = self.__get_data(batch_paths, batch_labels)
+            return batch, labels
 
     def __len__(self):
-        return len(self.bags)
-
-    def __getitem__(self, idx):
-        bag_path, class_label = self.bags[idx]
-
-        # Load all instances in the bag
-        instances = [Image.open(instance_path) for instance_path, _ in self.imgs if bag_path in instance_path]
-
-        # Apply transformations if needed
-        if self.transform:
-            instances = [self.transform(instance) for instance in instances]
-
-        # Determine the label based on the class label (negative or positive)
-        bag_label = class_label  # Assume bag label is the same as class label
-
-        return instances, bag_label
+        if self.drop_last:
+            return len(self.bags) // self.batch_size
+        else:
+            return (len(self.bags) + self.batch_size - 1) // self.batch_size
     
     def get_instances_list(self):
         return self.imgs
-
-    # @classmethod
-    # def load_raw_image(cls, path):
-    #     return to_tensor(pil_loader(path))
-
-    # class LazyLoader:
-    #     def __init__(self, path, dir, indices):
-    #         self.path = path
-    #         self.dir = dir
-    #         self.indices = indices
-
-    #     def __getitem__(self, item):
-    #         return CamelyonPreprocessedBags.load_raw_image(
-    #             os.path.join(self.path, self.dir, 'patch.{}.jpg'.format(int(self.indices[item]))))
-
-    # def __len__(self):
-    #     return len(self.dir_list)
-
-    # def __getitem__(self, index):
-    #     dir = self.dir_list[index]
-    #     try:
-    #         bag = torch.load(os.path.join(self.path, dir, self.embed_name))
-    #     except:
-    #         print(dir)
-    #         raise
-
-    #     if bag.shape[0] > self.max_bag:
-    #         if self.train:
-    #             rng = np.random
-    #         else:
-    #             rng = np.random.default_rng(3)
-    #         indices = rng.permutation(bag.shape[0])[:self.max_bag]
-    #         bag = bag[indices].detach().clone()
-    #     else:
-    #         indices = np.arange(0, bag.shape[0])
-    #     if self.all_labels:
-    #         label = torch.LongTensor([self.labels[dir]] * bag.shape[0])
-    #     else:
-    #         label = torch.LongTensor([self.labels[dir]]).max().unsqueeze(0)
-
-    #     if self.push:
-    #         return self.LazyLoader(self.path, dir, indices), bag, label
-    #     else:
-    #         return bag, label
-
-def create_datasets_MIL(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
-    
-    trainvalset = MultipleInstanceDataset(train_dir)
-    classes = trainvalset.classes
-    targets = [label for _, label in trainvalset.bags]
-    indices = list(range(len(trainvalset)))
-
-    train_indices = indices
-    
-    if test_dir is None:
-        if validation_size <= 0.:
-            raise ValueError("There is no test set directory, so validation size should be > 0 such that the training set can be split.")
-        subset_targets = list(np.array(targets)[train_indices])
-        train_indices, test_indices = train_test_split(train_indices, test_size=validation_size, stratify=subset_targets, random_state=seed)
-        testset = torch.utils.data.Subset(InstanceStack(MultipleInstanceDataset(train_dir), transform=transform_no_augment), indices=test_indices)
-        print("Samples in trainset:", len(indices), "of which", len(train_indices), "for training and ", len(test_indices), "for testing.", flush=True)
-    else:
-        testset = InstanceStack(MultipleInstanceDataset(test_dir), transform=transform_no_augment)
-    
-    trainset = torch.utils.data.Subset(TwoAugSupervisedDataset_MIL(trainvalset, transform1=transform1, transform2=transform2), indices=train_indices)
-    trainset_normal = torch.utils.data.Subset(InstanceStack(MultipleInstanceDataset(train_dir), transform=transform_no_augment), indices=train_indices)
-    trainset_normal_augment = torch.utils.data.Subset(InstanceStack(MultipleInstanceDataset(train_dir), transform=transforms.Compose([transform1, transform2])), indices=train_indices)
-    projectset = InstanceStack(MultipleInstanceDataset(project_dir), transform=transform_no_augment)
-
-    if test_dir_projection is not None:
-        testset_projection = InstanceStack(MultipleInstanceDataset(test_dir_projection), transform=transform_no_augment)
-    else:
-        testset_projection = testset
-
-    if train_dir_pretrain is not None:
-        trainvalset_pr = InstanceStack(MultipleInstanceDataset(train_dir_pretrain))
-        targets_pr = trainvalset_pr.targets
-        indices_pr = trainvalset_pr.indices
-        train_indices_pr = indices_pr
-
-        if test_dir is None:
-            subset_targets_pr = list(np.array(targets_pr)[indices_pr])
-            train_indices_pr, test_indices_pr = train_test_split(indices_pr, test_size=validation_size, stratify=subset_targets_pr, random_state=seed)
-
-        trainset_pretraining = torch.utils.data.Subset(InstanceStack(MultipleInstanceDataset(train_dir_pretrain), transform=transforms.Compose([transform1p, transform2])), indices=train_indices_pr)
-    else:
-        trainset_pretraining = None
-    
-    return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
-
-def create_datasets_CAMELYON(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
-    
-    trainvalset = CamelyonPreprocessedBags(train_dir, train=True)
-    classes = trainvalset.classes
-    targets = [label for _, label in trainvalset.bags]
-    indices = list(range(len(trainvalset)))
-
-    train_indices = indices
-    
-    if test_dir is None:
-        if validation_size <= 0.:
-            raise ValueError("There is no test set directory, so validation size should be > 0 such that the training set can be split.")
-        subset_targets = list(np.array(targets)[train_indices])
-        train_indices, test_indices = train_test_split(train_indices, test_size=validation_size, stratify=subset_targets, random_state=seed)
-        testset = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir, train=True), transform=transform_no_augment), indices=test_indices)
-        print("Samples in trainset:", len(indices), "of which", len(train_indices), "for training and ", len(test_indices), "for testing.", flush=True)
-    else:
-        testset = InstanceStack_CAMELYON(CamelyonPreprocessedBags(test_dir, train=False), transform=transform_no_augment)
-    
-    trainset = torch.utils.data.Subset(TwoAugSupervisedDataset_CAMELYON(trainvalset, transform1=transform1, transform2=transform2), indices=train_indices)
-    trainset_normal = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir, train=True), transform=transform_no_augment), indices=train_indices)
-    trainset_normal_augment = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir, train=True), transform=transforms.Compose([transform1, transform2])), indices=train_indices)
-    projectset = InstanceStack_CAMELYON(CamelyonPreprocessedBags(project_dir), transform=transform_no_augment)
-
-    if test_dir_projection is not None:
-        testset_projection = InstanceStack_CAMELYON(CamelyonPreprocessedBags(test_dir_projection, train=False), transform=transform_no_augment)
-    else:
-        testset_projection = testset
-
-    if train_dir_pretrain is not None:
-        trainvalset_pr = InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir_pretrain, train=True))
-        targets_pr = trainvalset_pr.targets
-        indices_pr = trainvalset_pr.indices
-        train_indices_pr = indices_pr
-
-        if test_dir is None:
-            subset_targets_pr = list(np.array(targets_pr)[indices_pr])
-            train_indices_pr, test_indices_pr = train_test_split(indices_pr, test_size=validation_size, stratify=subset_targets_pr, random_state=seed)
-
-        trainset_pretraining = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir_pretrain, train=True), transform=transforms.Compose([transform1p, transform2])), indices=train_indices_pr)
-    else:
-        trainset_pretraining = None
-    
-    return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
-
 
 def get_data(args: argparse.Namespace): 
     """
@@ -304,14 +247,88 @@ def get_data(args: argparse.Namespace):
         './data/Bisque/dataset/train','./data/Bisque/dataset/train','./data/Bisque/dataset/test', img_size = 32, seed = args.seed, validation_size = args.validation_size)
     
     if args.dataset == 'CAMELYON':
-        return get_camelyon(True, 
-        '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
-        '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
-        '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
-        img_size = 224, seed = args.seed, validation_size = args.validation_size)
+        return get_camelyon('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
+        train= True, img_size = 224, seed = args.seed, validation_size = args.validation_size)
     
 
     raise Exception(f'Could not load data set, data set "{args.dataset}" not found!')
+
+def get_dataloaders_CAMELYON(args: argparse.Namespace, device):
+    """
+    Get data loaders
+    """
+    # Obtain the metadata and transforms for CAMELYON
+    transform1, transform2, transform_no_augment, classes, num_channels, train_indices, targets = get_data(args)
+    
+    # Determine if GPU should be used
+    cuda = not args.disable_cuda and torch.cuda.is_available()
+    to_shuffle = True
+    sampler = None
+    
+    num_workers = args.num_workers
+    
+    if args.weighted_loss:
+        if targets is None:
+            raise ValueError("Weighted loss not implemented for this dataset. Targets should be restructured")
+        # https://discuss.pytorch.org/t/dataloader-using-subsetrandomsampler-and-weightedrandomsampler-at-the-same-time/29907
+        class_sample_count = torch.tensor([(targets[train_indices] == t).sum() for t in torch.unique(targets, sorted=True)])
+        weight = 1. / class_sample_count.float()
+        print("Weights for weighted sampler: ", weight, flush=True)
+        samples_weight = torch.tensor([weight[t] for t in targets[train_indices]])
+        # Create sampler, dataset, loader
+        sampler = torch.utils.data.WeightedRandomSampler(samples_weight, len(samples_weight),replacement=True)
+        to_shuffle = False
+
+    pretrain_batchsize = args.batch_size_pretrain 
+    
+    trainloader = MILBagLoader('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
+                               transform1=transform1, 
+                               transform2=transform2, 
+                               train=True, 
+                               batch_size=args.batch_size, 
+                               shuffle=to_shuffle, 
+                               drop_last=True, 
+                               random_state=np.random.seed(args.seed), 
+                               max_bag=20000)
+    
+    trainloader_pretraining = MILBagLoader('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
+                               transform1=transform1, 
+                               transform2=transform2, 
+                               train=True, 
+                               batch_size=pretrain_batchsize, 
+                               shuffle=to_shuffle, 
+                               drop_last=True, 
+                               random_state=np.random.seed(args.seed), 
+                               max_bag=20000)
+    
+    projectloader = MILBagLoader('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
+                               transform1=transform_no_augment,
+                               train=True, 
+                               batch_size=1, 
+                               shuffle=False, 
+                               drop_last=False, 
+                               random_state=np.random.seed(args.seed), 
+                               max_bag=20000)
+    
+    testloader = MILBagLoader('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
+                               transform1=transform_no_augment,
+                               train=False, 
+                               batch_size=args.batch_size, 
+                               shuffle=True, 
+                               drop_last=False, 
+                               random_state=np.random.seed(args.seed), 
+                               max_bag=20000)
+    
+    test_projectloader = MILBagLoader('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
+                               transform1=transform_no_augment,
+                               train=False, 
+                               batch_size=1, 
+                               shuffle=False, 
+                               drop_last=False, 
+                               random_state=np.random.seed(args.seed), 
+                               max_bag=20000)
+    print("Num classes (k) = ", len(classes), classes[:5], "etc.", flush=True)
+    return trainloader, trainloader_pretraining, projectloader, testloader, test_projectloader, classes
 
 def get_dataloaders(args: argparse.Namespace, device):
     """
@@ -340,7 +357,6 @@ def get_dataloaders(args: argparse.Namespace, device):
         to_shuffle = False
 
     pretrain_batchsize = args.batch_size_pretrain 
-    
     
     trainloader = torch.utils.data.DataLoader(trainset,
                                             batch_size=args.batch_size,
@@ -462,67 +478,95 @@ def create_datasets(transform1, transform2, transform_no_augment, num_channels:i
     
     return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
 
-
-# def get_pets(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
-#     mean = (0.485, 0.456, 0.406)
-#     std = (0.229, 0.224, 0.225)
-#     normalize = transforms.Normalize(mean=mean,std=std)
-#     transform_no_augment = transforms.Compose([
-#                             transforms.Resize(size=(img_size, img_size)),
-#                             transforms.ToTensor(),
-#                             normalize
-#                         ])
+def create_datasets_MIL(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
     
-#     if augment:
-#         transform1 = transforms.Compose([
-#             transforms.Resize(size=(img_size+48, img_size+48)), 
-#             TrivialAugmentWideNoColor(),
-#             transforms.RandomHorizontalFlip(),
-#             transforms.RandomResizedCrop(img_size+8, scale=(0.95, 1.))
-#         ])
-        
-#         transform2 = transforms.Compose([
-#         TrivialAugmentWideNoShape(),
-#         transforms.RandomCrop(size=(img_size, img_size)), #includes crop
-#         transforms.ToTensor(),
-#         normalize
-#         ])
-#     else:
-#         transform1 = transform_no_augment    
-#         transform2 = transform_no_augment           
+    trainvalset = MultipleInstanceDataset(train_dir)
+    classes = trainvalset.classes
+    targets = [label for _, label in trainvalset.bags]
+    indices = list(range(len(trainvalset)))
 
-#     return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
-
-# def get_digits(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
-#     mean = (0.485, 0.456, 0.406)
-#     std = (0.229, 0.224, 0.225)
-#     normalize = transforms.Normalize(mean=mean,std=std)
-#     transform_no_augment = transforms.Compose([
-#                             transforms.Resize(size=(img_size, img_size)),
-#                             transforms.ToTensor(),
-#                             normalize
-#                         ])
+    train_indices = indices
     
-#     if augment:
-#         transform1 = transforms.Compose([
-#             transforms.Resize(size=(img_size+48, img_size+48)), 
-#             TrivialAugmentWideNoColor(),
-#             #transforms.RandomHorizontalFlip(),
-#             transforms.RandomResizedCrop(img_size+8, scale=(0.95, 1.))
-#         ])
-        
-#         transform2 = transforms.Compose([
-#         TrivialAugmentWideNoShape(),
-#         transforms.RandomCrop(size=(img_size, img_size)), #includes crop
-#         transforms.ToTensor(),
-#         normalize
-#         ])
+    if test_dir is None:
+        if validation_size <= 0.:
+            raise ValueError("There is no test set directory, so validation size should be > 0 such that the training set can be split.")
+        subset_targets = list(np.array(targets)[train_indices])
+        train_indices, test_indices = train_test_split(train_indices, test_size=validation_size, stratify=subset_targets, random_state=seed)
+        testset = torch.utils.data.Subset(InstanceStack(MultipleInstanceDataset(train_dir), transform=transform_no_augment), indices=test_indices)
+        print("Samples in trainset:", len(indices), "of which", len(train_indices), "for training and ", len(test_indices), "for testing.", flush=True)
+    else:
+        testset = InstanceStack(MultipleInstanceDataset(test_dir), transform=transform_no_augment)
+    
+    trainset = torch.utils.data.Subset(TwoAugSupervisedDataset_MIL(trainvalset, transform1=transform1, transform2=transform2), indices=train_indices)
+    trainset_normal = torch.utils.data.Subset(InstanceStack(MultipleInstanceDataset(train_dir), transform=transform_no_augment), indices=train_indices)
+    trainset_normal_augment = torch.utils.data.Subset(InstanceStack(MultipleInstanceDataset(train_dir), transform=transforms.Compose([transform1, transform2])), indices=train_indices)
+    projectset = InstanceStack(MultipleInstanceDataset(project_dir), transform=transform_no_augment)
+
+    if test_dir_projection is not None:
+        testset_projection = InstanceStack(MultipleInstanceDataset(test_dir_projection), transform=transform_no_augment)
+    else:
+        testset_projection = testset
+
+    if train_dir_pretrain is not None:
+        trainvalset_pr = InstanceStack(MultipleInstanceDataset(train_dir_pretrain))
+        targets_pr = trainvalset_pr.targets
+        indices_pr = trainvalset_pr.indices
+        train_indices_pr = indices_pr
+
+        if test_dir is None:
+            subset_targets_pr = list(np.array(targets_pr)[indices_pr])
+            train_indices_pr, test_indices_pr = train_test_split(indices_pr, test_size=validation_size, stratify=subset_targets_pr, random_state=seed)
+
+        trainset_pretraining = torch.utils.data.Subset(InstanceStack(MultipleInstanceDataset(train_dir_pretrain), transform=transforms.Compose([transform1p, transform2])), indices=train_indices_pr)
+    else:
+        trainset_pretraining = None
+    
+    return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
+
+# def create_datasets_CAMELYON(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
+    
+#     trainvalset = CamelyonPreprocessedBags(train_dir, train=True)
+#     classes = trainvalset.classes
+#     targets = [label for _, label in trainvalset.bags]
+#     indices = list(range(len(trainvalset)))
+
+#     train_indices = indices
+    
+#     if test_dir is None:
+#         if validation_size <= 0.:
+#             raise ValueError("There is no test set directory, so validation size should be > 0 such that the training set can be split.")
+#         subset_targets = list(np.array(targets)[train_indices])
+#         train_indices, test_indices = train_test_split(train_indices, test_size=validation_size, stratify=subset_targets, random_state=seed)
+#         testset = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir, train=True), transform=transform_no_augment), indices=test_indices)
+#         print("Samples in trainset:", len(indices), "of which", len(train_indices), "for training and ", len(test_indices), "for testing.", flush=True)
 #     else:
-#         transform1 = transform_no_augment    
-#         transform2 = transform_no_augment           
+#         testset = InstanceStack_CAMELYON(CamelyonPreprocessedBags(test_dir, train=False), transform=transform_no_augment)
+    
+#     trainset = torch.utils.data.Subset(TwoAugSupervisedDataset_CAMELYON(trainvalset, transform1=transform1, transform2=transform2), indices=train_indices)
+#     trainset_normal = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir, train=True), transform=transform_no_augment), indices=train_indices)
+#     trainset_normal_augment = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir, train=True), transform=transforms.Compose([transform1, transform2])), indices=train_indices)
+#     projectset = InstanceStack_CAMELYON(CamelyonPreprocessedBags(project_dir), transform=transform_no_augment)
 
-#     return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
+#     if test_dir_projection is not None:
+#         testset_projection = InstanceStack_CAMELYON(CamelyonPreprocessedBags(test_dir_projection, train=False), transform=transform_no_augment)
+#     else:
+#         testset_projection = testset
 
+#     if train_dir_pretrain is not None:
+#         trainvalset_pr = InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir_pretrain, train=True))
+#         targets_pr = trainvalset_pr.targets
+#         indices_pr = trainvalset_pr.indices
+#         train_indices_pr = indices_pr
+
+#         if test_dir is None:
+#             subset_targets_pr = list(np.array(targets_pr)[indices_pr])
+#             train_indices_pr, test_indices_pr = train_test_split(indices_pr, test_size=validation_size, stratify=subset_targets_pr, random_state=seed)
+
+#         trainset_pretraining = torch.utils.data.Subset(InstanceStack_CAMELYON(CamelyonPreprocessedBags(train_dir_pretrain, train=True), transform=transforms.Compose([transform1p, transform2])), indices=train_indices_pr)
+#     else:
+#         trainset_pretraining = None
+    
+#     return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
 
 # def get_partimagenet(augment:bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
 #     # Validation size was set to 0.2, such that 80% of the data is used for training
@@ -696,7 +740,31 @@ def get_bisque(augment: bool, train_dir:str, project_dir: str, test_dir:str, img
     return create_datasets_MIL(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
     #return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
 
-def get_camelyon(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
+def get_camelyon(path:str, train: bool, img_size: int, seed:int, validation_size:float): 
+    
+    full_labels = {}        
+    for i in range(1,161):
+        full_labels['normal_{:03d}.tif'.format(i)] = 0
+    for i in range(1,112):
+        full_labels['tumor_{:03d}.tif'.format(i)] = 1
+    with open(os.path.join(path, 'reference.csv')) as f:
+        reader = csv.DictReader(f, delimiter=',')
+        for row in reader:
+            full_labels[str(row['slide'])+'.tif'] = 0 if row['label'] == 'Normal' else 1
+    
+    classes = list(set(full_labels.values()))
+    class_to_idx = {cls: i for i, cls in enumerate(classes)}
+    
+    if train:
+        bags = [(os.path.join(path, k), v) for k, v in full_labels.items() if 'test' not in k and os.path.exists(os.path.join(path, k))]
+    else:
+        bags = [(os.path.join(path, k), v) for k, v in full_labels.items() if 'test' in k and os.path.exists(os.path.join(path, k))]
+    
+    targets = [label for _, label in bags]
+    indices = list(range(len(bags)))
+
+    train_indices = indices
+
     shape = (3, img_size, img_size)
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
@@ -706,52 +774,19 @@ def get_camelyon(augment: bool, train_dir:str, project_dir: str, test_dir:str, i
                                                transforms.ToTensor()
                                                ])
     
-    if augment:
-        transform1 = transforms.Compose([RandomRotate(),
-                                         transforms.RandomVerticalFlip(),
-                                         transforms.RandomHorizontalFlip(),
-                                         transforms.ToTensor(),
-                                         ])
-        
-        transform2 = transforms.Compose([RandomHEStain(),
-                                         HistoNormalize(),
-                                         transforms.RandomCrop(img_size, padding=(3, 3),padding_mode='reflect'),
-                                         transforms.ToTensor(),
-                                         ])
-
-    else:
-        transform1 = transform_no_augment 
-        transform2 = transform_no_augment           
-
-    return create_datasets_CAMELYON(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
-   
-
-class InstanceStack_CAMELYON(torch.utils.data.Dataset):
-    r"""Returns stacked instances within a bag and a label."""
-    def __init__(self, dataset, transform=None):
-        self.dataset = dataset
-        self.classes = dataset.classes
-        self.class_to_idx = dataset.class_to_idx
-        self.bags = dataset.bags  # Assumes that bags and their labels are stored in the dataset
-        self.targets = [label for _, label in self.bags]  # Assuming bags are (path, label) tuples
-        self.imgs = dataset.imgs
-        self.transform = transform
-        self.samples = dataset.samples
-
-
-    def __getitem__(self, index):
-        bag_path, target = self.bags[index]
-
-        instances = [Image.open(instance_path) for instance_path, _ in self.imgs if bag_path in instance_path]
-        # Apply transformations if needed
-        if self.transform:
-            instances = [self.transform(instance) for instance in instances]
-        instances = torch.stack(instances)
-        
-        return instances, target
-
-    def __len__(self):
-        return len(self.bags)
+    transform1 = transforms.Compose([RandomRotate(),
+                                        transforms.RandomVerticalFlip(),
+                                        transforms.RandomHorizontalFlip(),
+                                        transforms.ToTensor(),
+                                        ])
+    
+    transform2 = transforms.Compose([RandomHEStain(),
+                                        HistoNormalize(),
+                                        transforms.RandomCrop(img_size, padding=(3, 3),padding_mode='reflect'),
+                                        transforms.ToTensor(),
+                                        ])
+    
+    return transform1, transform2, transform_no_augment, classes, 3, train_indices, targets
 
 class InstanceStack(torch.utils.data.Dataset):
     r"""Returns stacked instances within a bag and a label."""
@@ -779,32 +814,6 @@ class InstanceStack(torch.utils.data.Dataset):
         instances = torch.stack(instances)
         
         return instances, target
-
-    def __len__(self):
-        return len(self.bags)
-
-class TwoAugSupervisedDataset_CAMELYON(torch.utils.data.Dataset):
-    r"""Returns two augmentation and no labels."""
-    def __init__(self, dataset, transform1, transform2):
-        self.dataset = dataset
-        self.classes = dataset.classes
-        self.bags = dataset.bags  # Assumes that bags and their labels are stored in the dataset
-        self.targets = [label for _, label in self.bags]  # Assuming bags are (path, label) tuples
-        self.imgs = dataset.imgs
-        self.transform1 = transform1
-        self.transform2 = transform2
-
-
-    def __getitem__(self, index):
-        bag_path, target = self.bags[index]
-        
-        instances = [Image.open(instance_path) for instance_path, _ in self.imgs if bag_path in instance_path]
-
-        # Apply transformations if needed
-        instances = [self.transform1(instance) for instance in instances]
-        instances = [self.transform2(instance) for instance in instances]
-        instances = torch.stack(instances)
-        return instances, instances, target
 
     def __len__(self):
         return len(self.bags)

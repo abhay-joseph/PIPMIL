@@ -5,6 +5,7 @@ import torchvision
 from util.func import get_patch_size
 from torchvision import transforms
 import torch
+import util.data
 from util.vis_pipnet import get_img_coordinates
 import matplotlib.pyplot as plt
 import numpy as np
@@ -38,11 +39,15 @@ def vis_pred(net, vis_test_dir, classes, device, args: argparse.Namespace):
                             normalize])
 
     #vis_test_set = torchvision.datasets.ImageFolder(vis_test_dir, transform=transform_no_augment)
-    vis_test_set = InstanceStack(MultipleInstanceDataset(vis_test_dir), transform=transform_no_augment)
-    vis_test_loader = torch.utils.data.DataLoader(vis_test_set, batch_size = 1,
-                                                shuffle=False, pin_memory=not args.disable_cuda and torch.cuda.is_available(),
-                                                num_workers=num_workers)
-    imgs = vis_test_set.imgs
+    # vis_test_set = InstanceStack(MultipleInstanceDataset(vis_test_dir), transform=transform_no_augment)
+    vis_test_loader = util.data.MILBagLoader(vis_test_dir,
+                                                transform1=transform_no_augment,
+                                                train=False, 
+                                                batch_size=1, 
+                                                shuffle=False,
+                                                random_state=np.random.seed(args.seed), 
+                                                max_bag=20000)
+    imgs = vis_test_loader.imgs
     
     last_y = -1
     for k, (xs, ys) in enumerate(vis_test_loader): #shuffle is false so should lead to same order as in imgs
@@ -102,6 +107,8 @@ def vis_pred(net, vis_test_dir, classes, device, args: argparse.Namespace):
                             heatmap_img =  0.2 * np.float32(heatmap) + 0.6 * np.float32(img_tensor.squeeze().numpy().transpose(1,2,0))
                             plt.imsave(fname=os.path.join(save_path, 'heatmap_p%s.png'%str(prototype_idx.item())),arr=heatmap_img,vmin=0.0,vmax=1.0)
            
+        del xs, ys
+            
 def vis_pred_experiments(net, imgs_dir, classes, device, args: argparse.Namespace):
     # Make sure the model is in evaluation mode
     net.eval()
@@ -123,11 +130,18 @@ def vis_pred_experiments(net, imgs_dir, classes, device, args: argparse.Namespac
                             normalize])
 
     #vis_test_set = torchvision.datasets.ImageFolder(imgs_dir, transform=transform_no_augment)
-    vis_test_set = InstanceStack(MultipleInstanceDataset(imgs_dir), transform=transform_no_augment)
-    vis_test_loader = torch.utils.data.DataLoader(vis_test_set, batch_size = 1,
-                                                shuffle=False, pin_memory=not args.disable_cuda and torch.cuda.is_available(),
-                                                num_workers=num_workers)
-    imgs = vis_test_set.imgs
+    # vis_test_set = InstanceStack(MultipleInstanceDataset(imgs_dir), transform=transform_no_augment)
+    # vis_test_loader = torch.utils.data.DataLoader(vis_test_set, batch_size = 1,
+    #                                             shuffle=False, pin_memory=not args.disable_cuda and torch.cuda.is_available(),
+    #                                             num_workers=num_workers)
+    vis_test_loader = util.data.MILBagLoader(imgs_dir,
+                                                transform1=transform_no_augment,
+                                                train=False, 
+                                                batch_size=1, 
+                                                shuffle=False,
+                                                random_state=np.random.seed(args.seed), 
+                                                max_bag=20000)
+    imgs = vis_test_loader.imgs
     for k, (xs, ys) in enumerate(vis_test_loader): #shuffle is false so should lead to same order as in imgs
         
         xs, ys = xs.to(device), ys.to(device)
@@ -171,3 +185,4 @@ def vis_pred_experiments(net, imgs_dir, classes, device, args: argparse.Namespac
                         draw.rectangle([(max_idx_w*skip,max_idx_h*skip), (min(args.image_size, max_idx_w*skip+patchsize), min(args.image_size, max_idx_h*skip+patchsize))], outline='yellow', width=2)
                         image.save(os.path.join(save_path, 'mul%s_p%s_sim%s_w%s_rect.png'%(str(f"{simweight:.3f}"),str(prototype_idx.item()),str(f"{pooled[0,prototype_idx].item():.3f}"),str(f"{net.module._classification.weight[pred_class_idx, prototype_idx].item():.3f}"))))
 
+        del xs, ys
