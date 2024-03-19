@@ -3,7 +3,9 @@ import torch
 import torch.nn.functional as F
 import torch.optim
 import torch.utils.data
+# from torch.profiler import profile, record_function, ProfilerActivity
 import math
+import gc
 
 def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, scheduler_net, scheduler_classifier, criterion, epoch, nr_epochs, device, pretrain=False, finetune=False, progress_prefix: str = 'Train Epoch'):
 
@@ -64,6 +66,9 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
         optimizer_net.zero_grad(set_to_none=True)
        
         # Perform a forward pass through the network
+        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=True, record_shapes=True) as prof:
+        #     proto_features, pooled, out = net(torch.cat([xs1, xs2]))
+        # print(prof.key_averages().table(sort_by="cpu_memory_usage", row_limit=10))
         proto_features, pooled, out = net(torch.cat([xs1, xs2]))
         loss, acc = calculate_loss(proto_features, pooled, out, ys, align_pf_weight, t_weight, unif_weight, cl_weight, net.module._classification.normalization_multiplier, pretrain, finetune, criterion, train_iter, print=True, EPS=1e-8)
         
@@ -93,8 +98,15 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
                 if net.module._classification.bias is not None:
                     net.module._classification.bias.copy_(torch.clamp(net.module._classification.bias.data, min=0.))  
 
-        # Delete batch from memory
-        del xs1, xs2, ys
+        for obj in gc.get_objects():
+            try:
+                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+                    print(type(obj), obj.size())
+            except:
+                pass
+        # # Delete batch from memory
+        # del xs1, xs2, ys
+        torch.cuda.empty_cache()
         
     train_info['train_accuracy'] = total_acc/float(i+1)
     train_info['loss'] = total_loss/float(i+1)

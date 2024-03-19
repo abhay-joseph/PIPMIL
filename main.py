@@ -3,7 +3,7 @@ from pipnet.pipmil import PIPMIL, get_network_MIL
 from util.log import Log
 import torch.nn as nn
 from util.args import get_args, save_args, get_optimizer_nn
-from util.data import get_dataloaders, get_dataloaders_CAMELYON
+from util.data import get_dataloaders
 from util.func import init_weights_xavier
 from pipnet.train import train_pipnet
 from pipnet.test import eval_pipnet, get_thresholds, eval_ood
@@ -62,20 +62,12 @@ def run_pipnet(args=None):
     print("Device used: ", device, "with id", device_ids, flush=True)
     
     # Obtain the dataset and dataloaders
-    if args.dataset == 'CAMELYON':
-        trainloader, trainloader_pretraining, projectloader, testloader, test_projectloader, classes = get_dataloaders_CAMELYON(args, device)
-        if len(classes)<=20:
-            if args.validation_size == 0.:
-                print("Classes: ", testloader.class_to_idx, flush=True)
-            else:
-                print("Classes: ", str(classes), flush=True)
-    else:
-        trainloader, trainloader_pretraining, trainloader_normal, trainloader_normal_augment, projectloader, testloader, test_projectloader, classes = get_dataloaders(args, device)
-        if len(classes)<=20:
-            if args.validation_size == 0.:
-                print("Classes: ", testloader.dataset.class_to_idx, flush=True)
-            else:
-                print("Classes: ", str(classes), flush=True)
+    trainloader, trainloader_pretraining, trainloader_normal, trainloader_normal_augment, projectloader, testloader, test_projectloader, classes = get_dataloaders(args, device)
+    if len(classes)<=20:
+        if args.validation_size == 0.:
+            print("Classes: ", testloader.dataset.class_to_idx, flush=True)
+        else:
+            print("Classes: ", str(classes), flush=True)
 
     # Create a convolutional network based on arguments and add 1x1 conv layer
     feature_net, add_on_layers, pool_layer, classification_layer, num_prototypes = get_network_MIL(len(classes), args)
@@ -182,8 +174,8 @@ def run_pipnet(args=None):
         plt.clf()
         plt.plot(lrs_pretrain_net)
         plt.savefig(os.path.join(args.log_dir,'lr_pretrain_net.png'))
-        log.log_values('log_epoch_overview', epoch, "n.a.", "n.a.", "n.a.", "n.a.", "n.a.", "n.a.", "n.a.", train_info['loss'])
-    
+        log.log_values('log_epoch_overview', epoch, "n.a.", "n.a.", "n.a.", "n.a.", "n.a.", "n.a.", "n.a.", train_info['loss'])  
+
     if args.state_dict_dir_net == '':
         net.eval()
         torch.save({'model_state_dict': net.state_dict(), 'optimizer_net_state_dict': optimizer_net.state_dict()}, os.path.join(os.path.join(args.log_dir, 'checkpoints'), 'net_pretrained'))
@@ -191,7 +183,9 @@ def run_pipnet(args=None):
     with torch.no_grad():
         if 'convnext' in args.net and args.epochs_pretrain > 0:
             topks = visualize_topk(net, projectloader, len(classes), device, 'visualised_pretrained_prototypes_topk', args)
-        
+    
+    sys.exit()
+    
     # SECOND TRAINING PHASE
     # re-initialize optimizers and schedulers for second training phase
     optimizer_net, optimizer_classifier, params_to_freeze, params_to_train, params_backbone = get_optimizer_nn(net, args)            
@@ -312,11 +306,7 @@ def run_pipnet(args=None):
             if proto_weights[p]> 1e-3:
                 relevant_ps.append((p, proto_weights[p].item()))
         if args.validation_size == 0.:
-            if args.dataset == 'CAMELYON':
-                print("Class", c, "(", list(testloader.class_to_idx.keys())[list(testloader.class_to_idx.values()).index(c)],"):","has", len(relevant_ps),"relevant prototypes: ", relevant_ps, flush=True)
-            else:
-                print("Class", c, "(", list(testloader.dataset.class_to_idx.keys())[list(testloader.dataset.class_to_idx.values()).index(c)],"):","has", len(relevant_ps),"relevant prototypes: ", relevant_ps, flush=True)
-
+            print("Class", c, "(", list(testloader.dataset.class_to_idx.keys())[list(testloader.dataset.class_to_idx.values()).index(c)],"):","has", len(relevant_ps),"relevant prototypes: ", relevant_ps, flush=True)
     # Evaluate prototype purity        
     if args.dataset == 'CUB-200-2011':
         projectset_img0_path = projectloader.dataset.samples[0][0]
@@ -343,15 +333,12 @@ def run_pipnet(args=None):
         
     # visualize predictions 
     visualize(net, projectloader, len(classes), device, 'visualised_prototypes', args)
-    if args.dataset == 'CAMELYON':
-        test_path = '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches'
-    else:
-        testset_img0_path = test_projectloader.dataset.samples[0][0]
-        # single instance
-        # test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
-        # MIL
-        test_path = os.path.split(os.path.split(os.path.split(testset_img0_path)[0])[0])[0]
-        
+    testset_img0_path = test_projectloader.dataset.samples[0][0]
+    # single instance
+    # test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
+    # MIL
+    test_path = os.path.split(os.path.split(os.path.split(testset_img0_path)[0])[0])[0]
+
     vis_pred(net, test_path, classes, device, args) 
     if args.extra_test_image_folder != '':
         if os.path.exists(args.extra_test_image_folder):   
