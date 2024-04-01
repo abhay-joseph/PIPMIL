@@ -33,8 +33,7 @@ def get_args() -> argparse.Namespace:
                         help='Batch size when training the model using minibatch gradient descent. Batch size is multiplied with number of available GPUs')
     parser.add_argument('--batch_size_pretrain',
                         type=int,
-                        default=10,
-                        #default=128,
+                        default=128,
                         help='Batch size when pretraining the prototypes (first training stage)')
     parser.add_argument('--epochs',
                         type=int,

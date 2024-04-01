@@ -98,12 +98,12 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
                 if net.module._classification.bias is not None:
                     net.module._classification.bias.copy_(torch.clamp(net.module._classification.bias.data, min=0.))  
 
-        for obj in gc.get_objects():
-            try:
-                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                    print(type(obj), obj.size())
-            except:
-                pass
+        # for obj in gc.get_objects():
+        #     try:
+        #         if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+        #             print(type(obj), obj.size())
+        #     except:
+        #         pass
         # # Delete batch from memory
         # del xs1, xs2, ys
         torch.cuda.empty_cache()

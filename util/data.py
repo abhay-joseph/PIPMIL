@@ -43,6 +43,13 @@ class MultipleInstanceDataset(Dataset):
                 instance_names = os.listdir(bag_path) # List of instances within select bag
                 if len(instance_names) > self.max_bag:
                     indices = self.r.permutation(len(instance_names))[:self.max_bag] # trim number of instances to 20000
+                    # interval_length = len(instance_names)//self.max_bag
+                    # indices = []
+                    # for i in range(self.max_bag):
+                    #     start_index = int(i * interval_length)
+                    #     end_index = int((i + 1) * interval_length)
+                    #     selected_index = self.r.randint(start_index, end_index - 1)
+                    #     indices.append(selected_index)
                 else:
                     indices = np.arange(0, len(instance_names))
                 select_instance_paths = [(os.path.join(bag_path, instance_names[index]), class_label) for index in indices] # List of (instance_path, bag_label) tuples
@@ -78,7 +85,57 @@ class MultipleInstanceDataset(Dataset):
     
     def get_instances_list(self):
         return self.imgs
+    
+class MILPretrainDataset(Dataset):
+    '''Custom Dataset class to pretrain CAMELYON'''
+    def __init__(self, root, transform=None, max_bag=1000, random_state=3):
+        self.max_bag = max_bag
+        self.random_state = random_state
+        self.root = root
+        self.transform = transform
+        self.classes = [d.name for d in os.scandir(root) if d.is_dir()]
+        self.class_to_idx = {cls: i for i, cls in enumerate(self.classes)}
 
+        self.r = np.random.RandomState(random_state)
+
+        self.bags = []  # List to store bag information
+        self.imgs = []  # List of (image path, class_index) tuples 
+        self.samples = []  # List of (image path, class_index) tuples for all instances
+
+        for class_label, class_name in enumerate(self.classes):
+            class_path = os.path.join(root, class_name)
+            for bag_name in os.listdir(class_path):
+                bag_path = os.path.join(class_path, bag_name)
+                self.bags.append((bag_path, class_label))  # Store bag information
+                instance_names = os.listdir(bag_path) # List of instances within select bag
+                if len(instance_names) > self.max_bag:
+                    indices = self.r.permutation(len(instance_names))[:self.max_bag] # trim number of instances to 20000
+                else:
+                    indices = np.arange(0, len(instance_names))
+                select_instance_paths = [(os.path.join(bag_path, instance_names[index]), class_label) for index in indices] # List of (instance_path, bag_label) tuples
+                self.imgs += select_instance_paths
+                self.samples += select_instance_paths
+
+    def __len__(self):
+        return len(self.imgs)
+       
+    def __getitem__(self, idx):
+        img_path, class_label = self.imgs[idx]
+        
+        instance = Image.open(img_path)
+
+        # Apply transformations if needed
+        if self.transform:
+            instance = self.transform(instance)
+
+        # Determine the label based on the class label (negative or positive)
+        bag_label = class_label  
+
+        return instance, bag_label
+
+    def get_instances_list(self):
+        return self.imgs
+        
 # Custom Dataloader class
 class MILBagLoader:
     def __init__(self, path, transform1=None, transform2=None, train=True, batch_size=32, shuffle=False, drop_last=False, random_state=3, max_bag=20000):
@@ -517,7 +574,9 @@ def create_datasets_MIL(transform1, transform2, transform_no_augment, num_channe
     trainset = torch.utils.data.Subset(TwoAugSupervisedDataset_MIL(trainvalset, transform1=transform1, transform2=transform2), indices=train_indices)
     trainset_normal = torch.utils.data.Subset(MultipleInstanceDataset(train_dir, transform=transform_no_augment), indices=train_indices)
     trainset_normal_augment = torch.utils.data.Subset(MultipleInstanceDataset(train_dir, transform=transforms.Compose([transform1, transform2])), indices=train_indices)
-    projectset = MultipleInstanceDataset(project_dir, transform=transform_no_augment)
+    # projectset = MultipleInstanceDataset(project_dir, transform=transform_no_augment)
+    projectset = MILPretrainDataset(project_dir, random_state=seed, transform=transform_no_augment)
+
 
     if test_dir_projection is not None:
         testset_projection = MultipleInstanceDataset(test_dir_projection, transform=transform_no_augment)
@@ -536,7 +595,18 @@ def create_datasets_MIL(transform1, transform2, transform_no_augment, num_channe
 
         trainset_pretraining = torch.utils.data.Subset(MultipleInstanceDataset(train_dir_pretrain, transform=transforms.Compose([transform1p, transform2])), indices=train_indices_pr)
     else:
-        trainset_pretraining = None
+        # trainset_pretraining = None
+        trainvalset_pr = MILPretrainDataset(train_dir, random_state=seed)
+        targets_pr = [label for _, label in trainvalset_pr.imgs]
+        indices_pr = list(range(len(trainvalset_pr)))
+        train_indices_pr = indices_pr
+
+        if test_dir is None:
+            subset_targets_pr = list(np.array(targets_pr)[indices_pr])
+            train_indices_pr, test_indices_pr = train_test_split(indices_pr, test_size=validation_size, stratify=subset_targets_pr, random_state=seed)
+
+        trainset_pretraining = torch.utils.data.Subset(TwoAugSupervisedDataset(trainvalset_pr, transform1=transform1, transform2=transform2), indices=train_indices_pr)
+
     
     return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
 
@@ -851,12 +921,12 @@ class TwoAugSupervisedDataset(torch.utils.data.Dataset):
     def __init__(self, dataset, transform1, transform2):
         self.dataset = dataset
         self.classes = dataset.classes
+        self.imgs = dataset.imgs
         if type(dataset) == torchvision.datasets.folder.ImageFolder:
             self.imgs = dataset.imgs
             self.targets = dataset.targets
         else:
-            self.targets = dataset._labels
-            self.imgs = list(zip(dataset._image_files, dataset._labels))
+            self.targets = [label for _, label in self.imgs] 
         self.transform1 = transform1
         self.transform2 = transform2
         

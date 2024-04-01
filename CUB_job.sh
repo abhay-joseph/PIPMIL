@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --time=24:00:00
+#SBATCH --time=30
 #SBATCH --mem=100gb 
-#SBATCH --job-name=CAMELYON_TEST_3
-#SBATCH --partition=gpu_8
+#SBATCH --job-name=slurm-preproc_CAMELYON_RESNET
+#SBATCH --partition=dev_gpu_4
 #SBATCH --gres=gpu:1
-#SBATCH --output=CAMELYON_TEST_3.out
+#SBATCH --output=slurm-preproc_CAMELYON_RESNET.out
 
 # PIPNet directory
 cd /pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet
@@ -18,15 +18,22 @@ conda activate thesis_env
 
 # Run your Python script with the specified arguments
 # python main.py --dataset 'CUB-200-2011' --validation_size 0.0 --net 'convnext_tiny_26' --batch_size 64  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/pipnet_cub_cnext26_3' --num_features 0 --image_size 224 --state_dict_dir_net '' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 10 --seed 1 --gpu_ids '' --num_workers 8 
-python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'convnext_tiny_26' --batch_size 5  --batch_size_pretrain 10 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_CAMELYON_631056511_15' --num_features 0 --image_size 224 --state_dict_dir_net '' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 10 --seed 631056511 --gpu_ids '' --num_workers 8 
 
+# PRE-TRAINING
+# python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 5  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_CAMELYON_pretrain_resnet18' --num_features 0 --image_size 224 --state_dict_dir_net '' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 10 --seed 631056511 --gpu_ids '' --num_workers 8 --bias
 
-# mv './runs/pipnet_cub_cnext26/log_epoch_overview.csv' "./runs/pipnet_cub_cnext26/log_epoch_overview1.csv"
+# TRAINING
+# python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'convnext_tiny_26' --batch_size 5  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_CAMELYON_train_whole(test)' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet/runs/PIPMIL_CAMELYON_pretrain_whole-backbone/checkpoints/net_pretrained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 631056511 --gpu_ids '' --num_workers 8 --bias
 
-# for i in {2..5}
+# PREPROCESSING SAMPLES
+python3 util/camelyon_resnet.py
+
+# mv './runs/PIPMIL_CAMELYON_train_whole/log_epoch_overview.csv' "./runs/PIPMIL_CAMELYON_train_whole/log_epoch_overview1.csv"
+
+# for i in {2..20}
 # do
 #     echo "Running iteration $i"
-#     python main.py --dataset 'CUB-200-2011' --validation_size 0.0 --net 'convnext_tiny_26' --batch_size 64  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/pipnet_cub_cnext26' --num_features 0 --image_size 224 --state_dict_dir_net './runs/pipnet_cub_cnext26/checkpoints/net_trained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 1 --gpu_ids '' --num_workers 8 
-#     mv './runs/pipnet_cub_cnext26/log_epoch_overview.csv' "./runs/pipnet_cub_cnext26/log_epoch_overview$i.csv"
+#     python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'convnext_tiny_26' --batch_size 5  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_CAMELYON_train_whole' --num_features 0 --image_size 224 --state_dict_dir_net './runs/PIPMIL_CAMELYON_train_whole/checkpoints/net_trained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 631056511 --gpu_ids '' --num_workers 8 --bias
+#     mv './runs/PIPMIL_CAMELYON_train_whole/log_epoch_overview.csv' "./runs/PIPMIL_CAMELYON_train_whole/log_epoch_overview$i.csv"
 #     # python main.py --dataset 'nabirds' --validation_size 0.0 --net 'convnext_tiny_26' --batch_size 64  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/pipnet_cub_cnext26_1' --num_features 0 --image_size 224 --state_dict_dir_net './runs/pipnet_cub_cnext26_1/checkpoints/net_trained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 10 --seed 1 --gpu_ids '' --num_workers 8 
 # done

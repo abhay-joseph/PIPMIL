@@ -72,18 +72,8 @@ def run_pipnet(args=None):
     # Create a convolutional network based on arguments and add 1x1 conv layer
     feature_net, add_on_layers, pool_layer, classification_layer, num_prototypes = get_network_MIL(len(classes), args)
    
-    # # Create a PIP-Net
-    # net = PIPNet(num_classes=len(classes),
-    #                 num_prototypes=num_prototypes,
-    #                 feature_net = feature_net,
-    #                 args = args,
-    #                 add_on_layers = add_on_layers,
-    #                 pool_layer = pool_layer,
-    #                 classification_layer = classification_layer
-    #                 )
-
-    # Create a PIPMIL Net
-    net = PIPMIL(num_classes=len(classes),
+    # # Create a PIP-Net (Pre-Taining)
+    net = PIPNet(num_classes=len(classes),
                     num_prototypes=num_prototypes,
                     feature_net = feature_net,
                     args = args,
@@ -91,6 +81,16 @@ def run_pipnet(args=None):
                     pool_layer = pool_layer,
                     classification_layer = classification_layer
                     )
+
+    # Create a PIPMIL Net
+    # net = PIPMIL(num_classes=len(classes),
+    #                 num_prototypes=num_prototypes,
+    #                 feature_net = feature_net,
+    #                 args = args,
+    #                 add_on_layers = add_on_layers,
+    #                 pool_layer = pool_layer,
+    #                 classification_layer = classification_layer
+    #                 )
 
     net = net.to(device=device)
     net = nn.DataParallel(net, device_ids = device_ids)    
@@ -136,7 +136,8 @@ def run_pipnet(args=None):
 
     # Forward one batch through the backbone to get the latent output size
     with torch.no_grad():
-        xs1, _, _ = next(iter(trainloader))
+        xs1, _, _ = next(iter(trainloader_pretraining))
+        # xs1, _, _ = next(iter(trainloader))
         xs1 = xs1.to(device)
         proto_features, _, _ = net(xs1)
         wshape = proto_features.shape[-1]
@@ -164,7 +165,7 @@ def run_pipnet(args=None):
         for param in params_to_freeze:
             param.requires_grad = True # can be set to False when you want to freeze more layers
         for param in params_backbone:
-            param.requires_grad = False #can be set to True when you want to train whole backbone (e.g. if dataset is very different from ImageNet)
+            param.requires_grad = True #can be set to True when you want to train whole backbone (e.g. if dataset is very different from ImageNet)
         
         print("\nPretrain Epoch", epoch, "with batch size", trainloader_pretraining.batch_size, flush=True)
         
@@ -185,7 +186,7 @@ def run_pipnet(args=None):
             topks = visualize_topk(net, projectloader, len(classes), device, 'visualised_pretrained_prototypes_topk', args)
     
     sys.exit()
-    
+
     # SECOND TRAINING PHASE
     # re-initialize optimizers and schedulers for second training phase
     optimizer_net, optimizer_classifier, params_to_freeze, params_to_train, params_backbone = get_optimizer_nn(net, args)            
