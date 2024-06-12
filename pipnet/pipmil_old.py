@@ -6,7 +6,6 @@ from features.resnet_features import resnet18_features, resnet34_features, resne
 from features.convnext_features import convnext_tiny_26_features, convnext_tiny_13_features 
 import torch
 from torch import Tensor
-import torch.utils.checkpoint as checkpoint
 
 class PIPMIL(nn.Module):
     def __init__(self,
@@ -33,17 +32,19 @@ class PIPMIL(nn.Module):
         # Reshape input to [batch_size * patches_per_bag, channels, height, width]
         xs_reshaped = xs.view(-1, xs.size(2), xs.size(3), xs.size(4))
         
-        features = checkpoint.checkpoint_sequential(self._net, 200, xs_reshaped)
-        proto_features = checkpoint.checkpoint(self._add_on, features)
-
-        pooled = checkpoint.checkpoint(self._pool, proto_features)
+        # for projection and visualization, we use raw images and not embeddings
+        if vis:
+            features = self._net(xs_reshaped)
+            proto_features = self._add_on(features)
+        else:
+            # For Camelyon we use the embeddings obtained by preprocessing images using pretrained network
+            proto_features = self._add_on(xs_reshaped)
+        pooled = self._pool(proto_features)
 
         # Reshape back to [batch_size, patches_per_bag, -1]
         pooled = pooled.view(xs.size(0), xs.size(1), -1)
 
-        def bag_pooling(x):
-            return x.max(dim=1)[0]
-        bag_pooled =  checkpoint.checkpoint(bag_pooling, pooled)
+        bag_pooled =  pooled.max(dim=1)[0] 
 
         if inference:
             clamped_pooled = torch.where(bag_pooled < 0.1, 0., bag_pooled)  #during inference, ignore all prototypes that have 0.1 similarity or lower

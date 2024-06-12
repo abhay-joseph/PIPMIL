@@ -37,8 +37,9 @@ class RandomHEStain(object):
     def __call__(self, img):
         img = torch.permute(img, (1, 2, 0))
         img_he = skimage.color.rgb2hed(img)   
-        img_he[:, :, 0] = img_he[:, :, 0] * random.normal(1.0, 0.02, 1)  # H
-        img_he[:, :, 1] = img_he[:, :, 1] * random.normal(1.0, 0.02, 1)  # E
+        # Removed random normalizations
+        # img_he[:, :, 0] = img_he[:, :, 0] * random.normal(1.0, 0.02, 1)  # H
+        # img_he[:, :, 1] = img_he[:, :, 1] * random.normal(1.0, 0.02, 1)  # E
         img_rgb = np.clip(skimage.color.hed2rgb(img_he), 0, 1)
         img = Image.fromarray(np.uint8(img_rgb * 255.999))
         return img

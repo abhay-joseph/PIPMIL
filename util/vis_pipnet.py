@@ -57,8 +57,8 @@ def visualize_topk(net, projectloader, num_classes, device, foldername, args: ar
         with torch.no_grad():
             # Use the model to classify this batch of input data
             pfs, pooled, _ = net(xs, inference=True)
-            pooled = pooled.squeeze(0) 
-            pfs = pfs.squeeze(0) 
+            pooled = pooled.squeeze(0)
+            pfs = pfs.squeeze(0)
             
             for p in range(pooled.shape[0]):
                 c_weight = torch.max(classification_weights[:,p]) 
@@ -109,7 +109,7 @@ def visualize_topk(net, projectloader, num_classes, device, foldername, args: ar
                         if idx == i:
                             # Use the model to classify this batch of input data
                             with torch.no_grad():
-                                softmaxes, pooled, out = net(xs, inference=True) #softmaxes has shape (1, num_prototypes, W, H)
+                                softmaxes, pooled, out = net(xs, inference=True, vis=True) #softmaxes has shape (1, num_prototypes, W, H)
                                 outmax = torch.amax(out,dim=1)[0] #shape ([1]) because batch size of projectloader is 1
                                 if outmax.item() == 0.:
                                     abstained+=1
@@ -222,7 +222,7 @@ def visualize(net, projectloader, num_classes, device, foldername, args: argpars
         xs, ys = xs.to(device), ys.to(device)
         # Use the model to classify this batch of input data
         with torch.no_grad():
-            softmaxes, _, out = net(xs, inference=True) 
+            softmaxes, _, out = net(xs, inference=True, vis=True) 
 
         max_per_prototype, max_idx_per_prototype = torch.max(softmaxes, dim=0)
         # In PyTorch, images are represented as [channels, height, width]

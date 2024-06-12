@@ -4,6 +4,7 @@ import pathlib
 import types
 
 import torch
+import torch.nn as nn
 import torchvision
 from torch.utils.data import Dataset
 from torchvision.datasets.folder import pil_loader
@@ -28,15 +29,16 @@ def load_model_weights(model, weights):
 
 
 model = torchvision.models.__dict__['resnet18'](pretrained=False)
+num_ftrs = model.fc.in_features
+model.fc = nn.Linear(num_ftrs, 2)
 
 state = torch.load(MODEL_PATH, map_location='cuda:0')
 
 state_dict = state['model_state_dict']
 for key in list(state_dict.keys()):
-    state_dict[key.replace('module.', '').replace('_net.', '')] = state_dict.pop(key)
+    state_dict[key.replace('module.', '').replace('_net.', '').replace('_classification.', 'fc.')] = state_dict.pop(key)
 
 model = load_model_weights(model, state_dict)
-
 
 # model.fc = torch.nn.Sequential()
 
@@ -76,15 +78,20 @@ class ImageDataset(Dataset):
         img = normalize_to_tensor_transform(img)
         return img
 
-classes = [0,1]
-root = '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet/data/CAMELYON/dataset'
-data = []
+# classes = [0,1]
+# root = '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet/data/CAMELYON/dataset'
+# data = []
 
-for split in os.listdir(root):
-    split_root = os.path.join(root,split)
-    for class_name in os.listdir(split_root):
-        class_path = os.path.join(split_root, class_name)
-        data += [os.path.join(class_path,bag_path) for bag_path in os.listdir(class_path)]
+# for split in os.listdir(root):
+#     split_root = os.path.join(root,split)
+#     for class_name in os.listdir(split_root):
+#         class_path = os.path.join(split_root, class_name)
+#         data += [os.path.join(class_path,bag_path) for bag_path in os.listdir(class_path)]
+
+data = []
+data += ['/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/normal_{:03d}.tif/'.format(i) for i in range(1, 161)]
+data += ['/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/tumor_{:03d}.tif/'.format(i) for i in range(1, 112)]
+data += ['/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/test_{:03d}.tif/'.format(i) for i in range(1, 131)]
 
 for dataset_path in data:
     out_file = os.path.join(dataset_path, 'embeddings_resnet.pth')

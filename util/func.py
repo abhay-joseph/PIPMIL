@@ -4,7 +4,7 @@ def get_patch_size(args):
     if args.dataset == 'Bisque':
         patchsize = 4
     else:
-        patchsize = 32
+        patchsize = 56
     skip = round((args.image_size - patchsize) / (args.wshape-1))
     return patchsize, skip
 

@@ -73,17 +73,7 @@ def run_pipnet(args=None):
     feature_net, add_on_layers, pool_layer, classification_layer, num_prototypes = get_network_MIL(len(classes), args)
    
     # # Create a PIP-Net (Pre-Taining)
-    # net = PIPNet(num_classes=len(classes),
-    #                 num_prototypes=num_prototypes,
-    #                 feature_net = feature_net,
-    #                 args = args,
-    #                 add_on_layers = add_on_layers,
-    #                 pool_layer = pool_layer,
-    #                 classification_layer = classification_layer
-    #                 )
-
-    # Create a PIPMIL Net
-    net = PIPMIL(num_classes=len(classes),
+    net = PIPNet(num_classes=len(classes),
                     num_prototypes=num_prototypes,
                     feature_net = feature_net,
                     args = args,
@@ -91,6 +81,16 @@ def run_pipnet(args=None):
                     pool_layer = pool_layer,
                     classification_layer = classification_layer
                     )
+
+    # Create a PIPMIL Net
+    # net = PIPMIL(num_classes=len(classes),
+    #                 num_prototypes=num_prototypes,
+    #                 feature_net = feature_net,
+    #                 args = args,
+    #                 add_on_layers = add_on_layers,
+    #                 pool_layer = pool_layer,
+    #                 classification_layer = classification_layer
+    #                 )
 
     net = net.to(device=device)
     net = nn.DataParallel(net, device_ids = device_ids)    
@@ -136,8 +136,8 @@ def run_pipnet(args=None):
 
     # Forward one batch through the backbone to get the latent output size
     with torch.no_grad():
-        # xs1, _, _ = next(iter(trainloader_pretraining))
-        xs1, _, _ = next(iter(trainloader))
+        xs1, _, _ = next(iter(trainloader_pretraining))
+        # xs1, _, _ = next(iter(trainloader))
         xs1 = xs1.to(device)
         proto_features, _, _ = net(xs1)
         wshape = proto_features.shape[-1]
@@ -185,7 +185,7 @@ def run_pipnet(args=None):
         if ('convnext' in args.net or 'resnet' in args.net) and args.epochs_pretrain > 0:
             topks = visualize_topk(net, projectloader, len(classes), device, 'visualised_pretrained_prototypes_topk', args)
     
-    # sys.exit()
+    sys.exit()
 
     # SECOND TRAINING PHASE
     # re-initialize optimizers and schedulers for second training phase
@@ -206,7 +206,7 @@ def run_pipnet(args=None):
     lrs_classifier = []
    
     for epoch in range(1, args.epochs + 1):                      
-        epochs_to_finetune = 3 #during finetuning, only train classification layer and freeze rest. usually done for a few epochs (at least 1, more depends on size of dataset)
+        epochs_to_finetune = 10 #during finetuning, only train classification layer and freeze rest. usually done for a few epochs (at least 1, more depends on size of dataset)
         if epoch <= epochs_to_finetune and (args.epochs_pretrain > 0 or args.state_dict_dir_net != ''):
             for param in net.module._add_on.parameters():
                 param.requires_grad = False

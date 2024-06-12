@@ -9,7 +9,7 @@ import util.data
 from util.vis_pipnet import get_img_coordinates
 import matplotlib.pyplot as plt
 import numpy as np
-from util.data import MultipleInstanceDataset, InstanceStack
+from util.data import MultipleInstanceDataset, InstanceStack, CamelyonPreprocessedBagsCross
 
 try:
     import cv2
@@ -39,7 +39,8 @@ def vis_pred(net, vis_test_dir, classes, device, args: argparse.Namespace):
                             normalize])
 
     # vis_test_set = torchvision.datasets.ImageFolder(vis_test_dir, transform=transform_no_augment)
-    vis_test_set = MultipleInstanceDataset(vis_test_dir, transform=transform_no_augment)
+    vis_test_set = CamelyonPreprocessedBagsCross(vis_test_dir, train=False, test=True,
+                                                     all_labels=True, push=True)
     # vis_test_loader = util.data.MILBagLoader(vis_test_dir,
     #                                             transform1=transform_no_augment,
     #                                             train=False, 
@@ -134,10 +135,9 @@ def vis_pred_experiments(net, imgs_dir, classes, device, args: argparse.Namespac
                             normalize])
 
     #vis_test_set = torchvision.datasets.ImageFolder(imgs_dir, transform=transform_no_augment)
-    vis_test_set = MultipleInstanceDataset(imgs_dir, transform=transform_no_augment)
-    # vis_test_loader = torch.utils.data.DataLoader(vis_test_set, batch_size = 1,
-    #                                             shuffle=False, pin_memory=not args.disable_cuda and torch.cuda.is_available(),
-    #                                             num_workers=num_workers)
+    vis_test_set = CamelyonPreprocessedBagsCross(imgs_dir, train=False, test=True,
+                                                     all_labels=True, push=True)
+    
     # vis_test_loader = util.data.MILBagLoader(imgs_dir,
     #                                             transform1=transform_no_augment,
     #                                             train=False, 

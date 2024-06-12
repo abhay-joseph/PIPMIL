@@ -24,7 +24,8 @@ def get_args() -> argparse.Namespace:
                         help='Split between training and validation set. Can be zero when there is a separate test or validation directory. Should be between 0 and 1. Used for partimagenet (e.g. 0.2)')
     parser.add_argument('--net',
                         type=str,
-                        default='convnext_tiny_26',
+                        # default='convnext_tiny_26',
+                        default='resnet18',
                         help='Base network used as backbone of PIP-Net. Default is convnext_tiny_26 with adapted strides to output 26x26 latent representations. Other option is convnext_tiny_13 that outputs 13x13 (smaller and faster to train, less fine-grained). Pretrained network on iNaturalist is only available for resnet50_inat. Options are: resnet18, resnet34, resnet50, resnet50_inat, resnet101, resnet152, convnext_tiny_26 and convnext_tiny_13.')
     parser.add_argument('--batch_size',
                         type=int,
@@ -41,7 +42,8 @@ def get_args() -> argparse.Namespace:
                         help='The number of epochs PIP-Net should be trained (second training stage)')
     parser.add_argument('--epochs_pretrain',
                         type=int,
-                        default = 10,
+                        # default = 10,
+                        default = 0,
                         help='Number of epochs to pre-train the prototypes (first training stage). Recommended to train at least until the align loss < 1'
                         )
     parser.add_argument('--optimizer',
@@ -101,7 +103,8 @@ def get_args() -> argparse.Namespace:
                         help='Flag that weights the loss based on the class balance of the dataset. Recommended to use when data is imbalanced. ')
     parser.add_argument('--seed',
                         type=int,
-                        default=1,
+                        # default=1,
+                        default=631056511,
                         help='Random seed. Note that there will still be differences between runs due to nondeterminism. See https://pytorch.org/docs/stable/notes/randomness.html')
     parser.add_argument('--gpu_ids',
                         type=str,

@@ -101,10 +101,10 @@ def eval_pipnet(net,
     info['almost_nonzeros'] = global_anz/len(test_loader.dataset)
 
     if net.module._num_classes == 2:
-        tp = cm[0][0]
-        fn = cm[0][1]
-        fp = cm[1][0]
-        tn = cm[1][1]
+        tn = cm[0][0]
+        fp = cm[0][1]
+        fn = cm[1][0]
+        tp = cm[1][1]
         print("TP: ", tp, "FN: ",fn, "FP:", fp, "TN:", tn, flush=True)
         sensitivity = tp/(tp+fn)
         specificity = tn/(tn+fp)
@@ -113,11 +113,11 @@ def eval_pipnet(net,
         try:
             for classname, classidx in test_loader.dataset.class_to_idx.items(): 
                 if classidx == 0:
-                    # print("Accuracy positive class (", classname, classidx,") (TPR, Sensitivity):", tp/(tp+fn))
-                    print("Accuracy negative class (", classname, classidx,") (TNR, Sensitivity):", tp/(tp+fn))
+                    print("Accuracy positive class (", classname, classidx,") (TPR, Sensitivity):", tp/(tp+fn))
+                    # print("Accuracy negative class (", classname, classidx,") (TNR, Sensitivity):", tp/(tp+fn))
                 elif classidx == 1:
-                    # print("Accuracy negative class (", classname, classidx,") (TNR, Specificity):", tn/(tn+fp))
-                    print("Accuracy positive class (", classname, classidx,") (TPR, Specificity):", tn/(tn+fp))
+                    print("Accuracy negative class (", classname, classidx,") (TNR, Specificity):", tn/(tn+fp))
+                    # print("Accuracy positive class (", classname, classidx,") (TPR, Specificity):", tn/(tn+fp))
         except ValueError:
             pass
         print("Balanced accuracy: ", balanced_accuracy_score(y_trues, y_preds_classes),flush=True)
