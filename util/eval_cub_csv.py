@@ -198,7 +198,7 @@ def get_proto_patches_cub(net, projectloader, epoch, device, args, threshold=0.5
             imgtensor = projectloader.dataset[imgid][0].unsqueeze(0)
             with torch.no_grad():
                 # Use the model to classify this input image
-                pfs, pooled, _ = net(imgtensor)
+                pfs, pooled, _ = net(imgtensor, vis=True)
                 pooled = pooled.squeeze(0) 
                 pfs = pfs.squeeze(0) 
 
@@ -236,7 +236,7 @@ def get_topk_cub(net, projectloader, k, epoch, device, args):
 
         with torch.no_grad():
             # Use the model to classify this batch of input data
-            pfs, pooled, _ = net(xs)
+            pfs, pooled, _ = net(xs, vis=True)
             pooled = pooled.squeeze(0) 
             pfs = pfs.squeeze(0) 
             for p in range(pooled.shape[0]):
@@ -263,7 +263,7 @@ def get_topk_cub(net, projectloader, k, epoch, device, args):
                 imgtensor = projectloader.dataset[imgid][0].unsqueeze(0)
                 with torch.no_grad():
                     # Use the model to classify this batch of input data
-                    pfs, pooled, _ = net(imgtensor)
+                    pfs, pooled, _ = net(imgtensor, vis=True)
                     pfs = pfs.squeeze(0) 
                     pooled = pooled.squeeze(0)
                     if pooled[p].item() < 0.1:

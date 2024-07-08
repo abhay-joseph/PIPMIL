@@ -98,12 +98,12 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
                 if net.module._classification.bias is not None:
                     net.module._classification.bias.copy_(torch.clamp(net.module._classification.bias.data, min=0.))  
 
-        for obj in gc.get_objects():
-            try:
-                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                    print(type(obj), obj.size())
-            except:
-                pass
+        # for obj in gc.get_objects():
+        #     try:
+        #         if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+        #             print(type(obj), obj.size())
+        #     except:
+        #         pass
         # # Delete batch from memory
         # del xs1, xs2, ys
         torch.cuda.empty_cache()
@@ -118,21 +118,22 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
 def calculate_loss(proto_features, pooled, out, ys1, align_pf_weight, t_weight, unif_weight, cl_weight, net_normalization_multiplier, pretrain, finetune, criterion, train_iter, print=True, EPS=1e-10):
     ys = torch.cat([ys1,ys1])
     pooled1, pooled2 = pooled.chunk(2)
-    pf1, pf2 = proto_features.chunk(2)
+    # pf1, pf2 = proto_features.chunk(2)
 
-    embv2 = pf2.flatten(start_dim=2).permute(0,2,1).flatten(end_dim=1)
-    embv1 = pf1.flatten(start_dim=2).permute(0,2,1).flatten(end_dim=1)
+    # embv2 = pf2.flatten(start_dim=2).permute(0,2,1).flatten(end_dim=1)
+    # embv1 = pf1.flatten(start_dim=2).permute(0,2,1).flatten(end_dim=1)
     
-    a_loss_pf = (align_loss(embv1, embv2.detach())+ align_loss(embv2, embv1.detach()))/2.
-    tanh_loss = -(torch.log(torch.tanh(torch.sum(pooled1,dim=0))+EPS).mean() + torch.log(torch.tanh(torch.sum(pooled2,dim=0))+EPS).mean())/2.
-
-    if not finetune:
-        loss = align_pf_weight*a_loss_pf
-        loss += t_weight * tanh_loss
+    # a_loss_pf = (align_loss(embv1, embv2.detach())+ align_loss(embv2, embv1.detach()))/2.
+    # tanh_loss = -(torch.log(torch.tanh(torch.sum(pooled1,dim=0))+EPS).mean() + torch.log(torch.tanh(torch.sum(pooled2,dim=0))+EPS).mean())/2.
+    
+    # if not finetune:
+    #     loss = align_pf_weight*a_loss_pf
+    #     loss += t_weight * tanh_loss
     
     if not pretrain:
         softmax_inputs = torch.log1p(out**net_normalization_multiplier)
         class_loss = criterion(F.log_softmax((softmax_inputs),dim=1),ys)
+        loss = 0
         
         if finetune:
             loss= cl_weight * class_loss
@@ -151,15 +152,22 @@ def calculate_loss(proto_features, pooled, out, ys1, align_pf_weight, t_weight, 
     if print: 
         with torch.no_grad():
             if pretrain:
+                # train_iter.set_postfix_str(
+                # f'L: {loss.item():.3f}, LA:{a_loss_pf.item():.2f}, LT:{tanh_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled-0.1),dim=1).float().mean().item():.1f}',refresh=False)
                 train_iter.set_postfix_str(
-                f'L: {loss.item():.3f}, LA:{a_loss_pf.item():.2f}, LT:{tanh_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled-0.1),dim=1).float().mean().item():.1f}',refresh=False)
+                f'L: {loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled-0.1),dim=1).float().mean().item():.1f}',refresh=False)
             else:
                 if finetune:
+                    # train_iter.set_postfix_str(
+                    # f'L:{loss.item():.3f},LC:{class_loss.item():.3f}, LA:{a_loss_pf.item():.2f}, LT:{tanh_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled-0.1),dim=1).float().mean().item():.1f}, Ac:{acc:.3f}',refresh=False)
                     train_iter.set_postfix_str(
-                    f'L:{loss.item():.3f},LC:{class_loss.item():.3f}, LA:{a_loss_pf.item():.2f}, LT:{tanh_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled-0.1),dim=1).float().mean().item():.1f}, Ac:{acc:.3f}',refresh=False)
+                    f'L:{loss.item():.3f},LC:{class_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled-0.1),dim=1).float().mean().item():.1f}, Ac:{acc:.3f}',refresh=False)
                 else:
+                    # train_iter.set_postfix_str(
+                    # f'L:{loss.item():.3f},LC:{class_loss.item():.3f}, LA:{a_loss_pf.item():.2f}, LT:{tanh_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled-0.1),dim=1).float().mean().item():.1f}, Ac:{acc:.3f}',refresh=False)            
                     train_iter.set_postfix_str(
-                    f'L:{loss.item():.3f},LC:{class_loss.item():.3f}, LA:{a_loss_pf.item():.2f}, LT:{tanh_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled-0.1),dim=1).float().mean().item():.1f}, Ac:{acc:.3f}',refresh=False)            
+                    f'L:{loss.item():.3f},LC:{class_loss.item():.3f}, num_scores>0.1:{torch.count_nonzero(torch.relu(pooled-0.1),dim=1).float().mean().item():.1f}, Ac:{acc:.3f}',refresh=False)            
+
     return loss, acc
 
 # Extra uniform loss from https://www.tongzhouwang.info/hypersphere/. Currently not used but you could try adding it if you want. 

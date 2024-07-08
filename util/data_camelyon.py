@@ -21,7 +21,7 @@ from util.utils_augemntation import RandomRotate
 
 class MultipleInstanceDataset(Dataset):
     '''Custom Dataset class imitating Imagefolder format for MIL setup, for CAMELYON'''
-    def __init__(self, root, transform=None, max_bag=100, random_state=3):
+    def __init__(self, root, transform=None, max_bag=512, random_state=3):
         self.max_bag = max_bag
         self.random_state = random_state
         self.root = root
@@ -43,13 +43,6 @@ class MultipleInstanceDataset(Dataset):
                 instance_names = os.listdir(bag_path) # List of instances within select bag
                 if len(instance_names) > self.max_bag:
                     indices = self.r.permutation(len(instance_names))[:self.max_bag] # trim number of instances to 20000
-                    # interval_length = len(instance_names)//self.max_bag
-                    # indices = []
-                    # for i in range(self.max_bag):
-                    #     start_index = int(i * interval_length)
-                    #     end_index = int((i + 1) * interval_length)
-                    #     selected_index = self.r.randint(start_index, end_index - 1)
-                    #     indices.append(selected_index)
                 else:
                     indices = np.arange(0, len(instance_names))
                 select_instance_paths = [(os.path.join(bag_path, instance_names[index]), class_label) for index in indices] # List of (instance_path, bag_label) tuples
@@ -71,12 +64,6 @@ class MultipleInstanceDataset(Dataset):
 
         # Stack images into single bag tensor
         instances = torch.stack(instances)
-
-        # padding each bag tensor to len=20000 to maintain uniform dimensions across batch
-        if len(instances) < self.max_bag:
-            pad_size = self.max_bag - len(instances)
-            padding = torch.zeros(pad_size, *instances.shape[1:])
-            instances = torch.cat([instances, padding], dim=0)
 
         # Determine the label based on the class label (negative or positive)
         bag_label = class_label  
@@ -139,7 +126,7 @@ class MILPretrainDataset(Dataset):
 
 class CamelyonPreprocessedBagsCross(Dataset):
     def __init__(self, path, train=True, test=False, push=False, shuffle_bag=False, data_augmentation=False,
-                 loc_info=False, folds=10, fold_id=1, random_state=3, all_labels=False, max_bag=2000):
+                 loc_info=False, folds=10, fold_id=1, random_state=3, all_labels=False, max_bag=20000):
         self.path = path
         self.train = train
         self.test = test
@@ -408,113 +395,20 @@ def get_data(args: argparse.Namespace):
     np.random.seed(args.seed)
     if args.dataset =='CUB-200-2011':   
         return get_birds(True, './data/CUB_200_2011/dataset/train_crop', './data/CUB_200_2011/dataset/train', './data/CUB_200_2011/dataset/test_crop', args.image_size, args.seed, args.validation_size, './data/CUB_200_2011/dataset/train', './data/CUB_200_2011/dataset/test_full')
-    
-    # if args.dataset == 'MNIST':
-    #     return get_digits(True, 
-    #     './data/MNIST/dataset/train','./data/MNIST/dataset/train','./data/MNIST/dataset/test', args.image_size, args.seed, args.validation_size)
-    
-    # if args.dataset == 'pets':
-    #     return get_pets(True, './data/PETS/dataset/train','./data/PETS/dataset/train','./data/PETS/dataset/test', args.image_size, args.seed, args.validation_size)
-    # if args.dataset == 'partimagenet': #use --validation_size of 0.2
-    #     return get_partimagenet(True, './data/partimagenet/dataset/all', './data/partimagenet/dataset/all', None, args.image_size, args.seed, args.validation_size) 
-    # if args.dataset == 'CARS':
-    #     return get_cars(True, './data/cars/dataset/train', './data/cars/dataset/train', './data/cars/dataset/test', args.image_size, args.seed, args.validation_size)
-    # if args.dataset == 'grayscale_example':
-    #     return get_grayscale(True, './data/train', './data/train', './data/test', args.image_size, args.seed, args.validation_size)
-    
-    if args.dataset == 'Bisque':
-        return get_bisque(True, 
-        './data/Bisque/dataset/train','./data/Bisque/dataset/train','./data/Bisque/dataset/test', img_size = 32, seed = args.seed, validation_size = args.validation_size)
-    
+
     if args.dataset == 'CAMELYON':
-       return get_camelyon(True, 
+        # return get_camelyon('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',train= True, img_size = 224, seed = args.seed, validation_size = args.validation_size)
+        return get_camelyon(True, 
         './data/CAMELYON/dataset/train','./data/CAMELYON/dataset/train','./data/CAMELYON/dataset/test', img_size = 224, seed = args.seed, validation_size = args.validation_size)
-
+        
     raise Exception(f'Could not load data set, data set "{args.dataset}" not found!')
-
-def get_dataloaders_CAMELYON(args: argparse.Namespace, device):
-    """
-    Get data loaders
-    """
-    # Obtain the metadata and transforms for CAMELYON
-    transform1, transform2, transform_no_augment, classes, num_channels, train_indices, targets = get_data(args)
-    
-    # Determine if GPU should be used
-    cuda = not args.disable_cuda and torch.cuda.is_available()
-    to_shuffle = True
-    sampler = None
-    
-    num_workers = args.num_workers
-    
-    if args.weighted_loss:
-        if targets is None:
-            raise ValueError("Weighted loss not implemented for this dataset. Targets should be restructured")
-        # https://discuss.pytorch.org/t/dataloader-using-subsetrandomsampler-and-weightedrandomsampler-at-the-same-time/29907
-        class_sample_count = torch.tensor([(targets[train_indices] == t).sum() for t in torch.unique(targets, sorted=True)])
-        weight = 1. / class_sample_count.float()
-        print("Weights for weighted sampler: ", weight, flush=True)
-        samples_weight = torch.tensor([weight[t] for t in targets[train_indices]])
-        # Create sampler, dataset, loader
-        sampler = torch.utils.data.WeightedRandomSampler(samples_weight, len(samples_weight),replacement=True)
-        to_shuffle = False
-
-    pretrain_batchsize = args.batch_size_pretrain 
-    
-    trainloader = MILBagLoader('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
-                               transform1=transform1, 
-                               transform2=transform2, 
-                               train=True, 
-                               batch_size=args.batch_size, 
-                               shuffle=to_shuffle, 
-                               drop_last=True, 
-                               random_state=np.random.seed(args.seed), 
-                               max_bag=20000)
-    
-    trainloader_pretraining = MILBagLoader('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
-                               transform1=transform1, 
-                               transform2=transform2, 
-                               train=True, 
-                               batch_size=pretrain_batchsize, 
-                               shuffle=to_shuffle, 
-                               drop_last=True, 
-                               random_state=np.random.seed(args.seed), 
-                               max_bag=20000)
-    
-    projectloader = MILBagLoader('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
-                               transform1=transform_no_augment,
-                               train=True, 
-                               batch_size=1, 
-                               shuffle=False, 
-                               drop_last=False, 
-                               random_state=np.random.seed(args.seed), 
-                               max_bag=20000)
-    
-    testloader = MILBagLoader('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
-                               transform1=transform_no_augment,
-                               train=False, 
-                               batch_size=args.batch_size, 
-                               shuffle=True, 
-                               drop_last=False, 
-                               random_state=np.random.seed(args.seed), 
-                               max_bag=20000)
-    
-    test_projectloader = MILBagLoader('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',
-                               transform1=transform_no_augment,
-                               train=False, 
-                               batch_size=1, 
-                               shuffle=False, 
-                               drop_last=False, 
-                               random_state=np.random.seed(args.seed), 
-                               max_bag=20000)
-    print("Num classes (k) = ", len(classes), classes[:5], "etc.", flush=True)
-    return trainloader, trainloader_pretraining, projectloader, testloader, test_projectloader, classes
 
 def get_dataloaders(args: argparse.Namespace, device):
     """
     Get data loaders
     """
     # Obtain the dataset
-    trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, targets = get_data(args)
+    trainset, trainset_pretraining, projectset, testset, testset_projection, classes, num_channels, train_indices, targets = get_data(args)
     
     # Determine if GPU should be used
     cuda = not args.disable_cuda and torch.cuda.is_available()
@@ -567,25 +461,6 @@ def get_dataloaders(args: argparse.Namespace, device):
                                             worker_init_fn=np.random.seed(args.seed),
                                             drop_last=True
                                             )
-
-    trainloader_normal = torch.utils.data.DataLoader(trainset_normal,
-                                            batch_size=args.batch_size,
-                                            shuffle=to_shuffle,
-                                            sampler=sampler,
-                                            pin_memory=cuda,
-                                            num_workers=num_workers,
-                                            worker_init_fn=np.random.seed(args.seed),
-                                            drop_last=True
-                                            )
-    trainloader_normal_augment = torch.utils.data.DataLoader(trainset_normal_augment,
-                                            batch_size=args.batch_size,
-                                            shuffle=to_shuffle,
-                                            sampler=sampler,
-                                            pin_memory=cuda,
-                                            num_workers=num_workers,
-                                            worker_init_fn=np.random.seed(args.seed),
-                                            drop_last=True
-                                            )
     
     projectloader = torch.utils.data.DataLoader(projectset,
                                               batch_size = 1,
@@ -612,7 +487,7 @@ def get_dataloaders(args: argparse.Namespace, device):
                                              drop_last=False
                                              )
     print("Num classes (k) = ", len(classes), classes[:5], "etc.", flush=True)
-    return trainloader, trainloader_pretraining, trainloader_normal, trainloader_normal_augment, projectloader, testloader, test_projectloader, classes
+    return trainloader, trainloader_pretraining, projectloader, testloader, test_projectloader, classes
 
 def create_datasets(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
     
@@ -659,85 +534,83 @@ def create_datasets(transform1, transform2, transform_no_augment, num_channels:i
 
 def create_datasets_MIL(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
     
-    trainvalset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, shuffle_bag=True, data_augmentation=True, random_state=seed)
-    classes = trainvalset.classes
-    targets = [label for k, label in trainvalset.labels.items() if os.path.exists(os.path.join(trainvalset.path, k, trainvalset.embed_name))]
-    indices = list(range(len(trainvalset)))
-
-    train_indices = indices
-    
-    trainset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, shuffle_bag=True,
-                                           data_augmentation=True,
-                                           random_state=seed)
-    
-    trainset_pretraining = None
-    trainset_normal = trainset
-    trainset_normal_augment = trainset
-
-    projectset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, push=True, shuffle_bag=True,
-                                                random_state=seed)
-    
-    testset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=False, test=True, all_labels=True,
-                                                random_state=seed)
-    testset_projection = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=False, test=True,
-                                                     all_labels=True, push=True)
-    
-    
-    # trainvalset = MultipleInstanceDataset(train_dir, random_state=seed)
+    # trainvalset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, shuffle_bag=True, data_augmentation=True, random_state=seed)
     # classes = trainvalset.classes
-    # targets = [label for _, label in trainvalset.bags]
+    # targets = [label for k, label in trainvalset.labels.items() if os.path.exists(os.path.join(trainvalset.path, k, trainvalset.embed_name))]
     # indices = list(range(len(trainvalset)))
 
     # train_indices = indices
     
-    # if test_dir is None:
-    #     if validation_size <= 0.:
-    #         raise ValueError("There is no test set directory, so validation size should be > 0 such that the training set can be split.")
-    #     subset_targets = list(np.array(targets)[train_indices])
-    #     train_indices, test_indices = train_test_split(train_indices, test_size=validation_size, stratify=subset_targets, random_state=seed)
-    #     testset = torch.utils.data.Subset(MultipleInstanceDataset(train_dir, transform=transform_no_augment), indices=test_indices)
-    #     print("Samples in trainset:", len(indices), "of which", len(train_indices), "for training and ", len(test_indices), "for testing.", flush=True)
-    # else:
-    #     testset = MultipleInstanceDataset(test_dir, transform=transform_no_augment)
+    # trainset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, shuffle_bag=True,
+    #                                        data_augmentation=True,
+    #                                        random_state=seed)
     
-    # trainset = torch.utils.data.Subset(TwoAugSupervisedDataset_MIL(trainvalset, transform1=transform1, transform2=transform2), indices=train_indices)
-    # trainset_normal = torch.utils.data.Subset(MultipleInstanceDataset(train_dir, transform=transform_no_augment), indices=train_indices)
-    # trainset_normal_augment = torch.utils.data.Subset(MultipleInstanceDataset(train_dir, transform=transforms.Compose([transform1, transform2])), indices=train_indices)
-    # projectset = MultipleInstanceDataset(project_dir, transform=transform_no_augment)
-    # # projectset = MILPretrainDataset(project_dir, random_state=seed, transform=transform_no_augment)
+    # trainset_pretraining = None
+    # trainset_normal = trainset
+    # trainset_normal_augment = trainset
+
+    # projectset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, push=True, shuffle_bag=True,
+    #                                             random_state=seed)
+    
+    # testset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=False, test=True, all_labels=True,
+    #                                             random_state=seed)
+    # testset_projection = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=False, test=True,
+    #                                                  all_labels=True, push=True)
+    
+    
+    trainvalset = MultipleInstanceDataset(train_dir, random_state=seed)
+    classes = trainvalset.classes
+    targets = [label for _, label in trainvalset.bags]
+    indices = list(range(len(trainvalset)))
+
+    train_indices = indices
+    
+    if test_dir is None:
+        if validation_size <= 0.:
+            raise ValueError("There is no test set directory, so validation size should be > 0 such that the training set can be split.")
+        subset_targets = list(np.array(targets)[train_indices])
+        train_indices, test_indices = train_test_split(train_indices, test_size=validation_size, stratify=subset_targets, random_state=seed)
+        testset = torch.utils.data.Subset(MultipleInstanceDataset(train_dir, transform=transform_no_augment), indices=test_indices)
+        print("Samples in trainset:", len(indices), "of which", len(train_indices), "for training and ", len(test_indices), "for testing.", flush=True)
+    else:
+        testset = MultipleInstanceDataset(test_dir, transform=transform_no_augment)
+    
+    trainset = torch.utils.data.Subset(TwoAugSupervisedDataset_MIL(trainvalset, transform1=transform1, transform2=transform2), indices=train_indices)
+    projectset = MultipleInstanceDataset(project_dir, transform=transform_no_augment)
+    # projectset = MILPretrainDataset(project_dir, random_state=seed, transform=transform_no_augment)
 
 
-    # if test_dir_projection is not None:
-    #     testset_projection = MultipleInstanceDataset(test_dir_projection, transform=transform_no_augment)
-    # else:
-    #     testset_projection = testset
+    if test_dir_projection is not None:
+        testset_projection = MultipleInstanceDataset(test_dir_projection, transform=transform_no_augment)
+    else:
+        testset_projection = testset
 
-    # if train_dir_pretrain is not None:
-    #     trainvalset_pr = MultipleInstanceDataset(train_dir_pretrain, transform=transform_no_augment)
-    #     targets_pr = trainvalset_pr.targets
-    #     indices_pr = trainvalset_pr.indices
-    #     train_indices_pr = indices_pr
+    if train_dir_pretrain is not None:
+        trainvalset_pr = MultipleInstanceDataset(train_dir_pretrain, transform=transform_no_augment)
+        targets_pr = trainvalset_pr.targets
+        indices_pr = trainvalset_pr.indices
+        train_indices_pr = indices_pr
 
-    #     if test_dir is None:
-    #         subset_targets_pr = list(np.array(targets_pr)[indices_pr])
-    #         train_indices_pr, test_indices_pr = train_test_split(indices_pr, test_size=validation_size, stratify=subset_targets_pr, random_state=seed)
+        if test_dir is None:
+            subset_targets_pr = list(np.array(targets_pr)[indices_pr])
+            train_indices_pr, test_indices_pr = train_test_split(indices_pr, test_size=validation_size, stratify=subset_targets_pr, random_state=seed)
 
-    #     trainset_pretraining = torch.utils.data.Subset(MultipleInstanceDataset(train_dir_pretrain, transform=transforms.Compose([transform1p, transform2])), indices=train_indices_pr)
-    # else:
-    #     # trainset_pretraining = None
-    #     trainvalset_pr = MILPretrainDataset(train_dir, random_state=seed)
-    #     targets_pr = [label for _, label in trainvalset_pr.imgs]
-    #     indices_pr = list(range(len(trainvalset_pr)))
-    #     train_indices_pr = indices_pr
+        trainset_pretraining = torch.utils.data.Subset(MultipleInstanceDataset(train_dir_pretrain, transform=transforms.Compose([transform1p, transform2])), indices=train_indices_pr)
+    else:
+        # trainset_pretraining = None
+        trainvalset_pr = MILPretrainDataset(train_dir, random_state=seed)
+        targets_pr = [label for _, label in trainvalset_pr.imgs]
+        indices_pr = list(range(len(trainvalset_pr)))
+        train_indices_pr = indices_pr
 
-    #     if test_dir is None:
-    #         subset_targets_pr = list(np.array(targets_pr)[indices_pr])
-    #         train_indices_pr, test_indices_pr = train_test_split(indices_pr, test_size=validation_size, stratify=subset_targets_pr, random_state=seed)
+        if test_dir is None:
+            subset_targets_pr = list(np.array(targets_pr)[indices_pr])
+            train_indices_pr, test_indices_pr = train_test_split(indices_pr, test_size=validation_size, stratify=subset_targets_pr, random_state=seed)
 
-    #     trainset_pretraining = torch.utils.data.Subset(TwoAugSupervisedDataset(trainvalset_pr, transform1=transform1, transform2=transform2), indices=train_indices_pr)
+        trainset_pretraining = torch.utils.data.Subset(TwoAugSupervisedDataset(trainvalset_pr, transform1=transform1, transform2=transform2), indices=train_indices_pr)
 
     
-    return trainset, trainset_pretraining, trainset_normal, trainset_normal_augment, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
+    return trainset, trainset_pretraining, projectset, testset, testset_projection, classes, num_channels, train_indices, torch.LongTensor(targets)
 
 # def create_datasets_CAMELYON(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
     
@@ -820,48 +693,6 @@ def get_birds(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_
 
     return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size, train_dir_pretrain, test_dir_projection, transform1p)
 
-def get_bisque(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
-    shape = (3, img_size, img_size)
-    mean = (0.485, 0.456, 0.406)
-    std = (0.229, 0.224, 0.225)
-    #normalize = transforms.Compose([utils_augemntation.HistoNormalize(),transforms.ToTensor(),])
-    transform_no_augment = transforms.Compose([transforms.Resize(size=(img_size, img_size)),
-                                               HistoNormalize(),
-                                               transforms.ToTensor()
-                                               ])
-    
-    # normalize = transforms.Normalize(mean=mean,std=std)
-    # transform_no_augment = transforms.Compose([
-    #                         transforms.Resize(size=(img_size, img_size)),
-    #                         transforms.ToTensor(),
-    #                         normalize
-    #                     ])
-    
-    if augment:
-        transform1 = transforms.Compose([RandomRotate(),
-                                         transforms.RandomVerticalFlip(),
-                                         transforms.RandomHorizontalFlip(),
-                                         transforms.ToTensor(),
-                                         ])
-        # transform2 = transforms.Compose([
-        #                     TrivialAugmentWideNoShape(),
-        #                     transforms.RandomCrop(32, padding=(3, 3),padding_mode='reflect'), #includes crop
-        #                     transforms.ToTensor(),
-        #                     normalize
-        #                     ])
-        transform2 = transforms.Compose([RandomHEStain(),
-                                         HistoNormalize(),
-                                         transforms.RandomCrop(32, padding=(3, 3),padding_mode='reflect'),
-                                         transforms.ToTensor(),
-                                         ])
-
-    else:
-        transform1 = transform_no_augment 
-        transform2 = transform_no_augment           
-
-    return create_datasets_MIL(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
-    #return create_datasets(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
-
 def get_camelyon(augment: bool, train_dir:str, project_dir: str, test_dir:str, img_size: int, seed:int, validation_size:float): 
     
     shape = (3, img_size, img_size)
@@ -891,7 +722,7 @@ def get_camelyon(augment: bool, train_dir:str, project_dir: str, test_dir:str, i
         transform2 = transform_no_augment           
 
     return create_datasets_MIL(transform1, transform2, transform_no_augment, 3, train_dir, project_dir, test_dir, seed, validation_size)
-    
+
 class InstanceStack(torch.utils.data.Dataset):
     r"""Returns stacked instances within a bag and a label."""
     def __init__(self, dataset, transform=None):

@@ -29,65 +29,30 @@ class PIPMIL(nn.Module):
         self._classification = classification_layer
         self._multiplier = classification_layer.normalization_multiplier
 
-    # def forward_single_instance(self, x):
-    #     features = self._net(x)
-    #     proto_features = self._add_on(features)
-    #     pooled = self._pool(proto_features)
-    #     return pooled
-
-    # Only designed for batch size = 1 or uniform sized bags
     def forward(self, xs,  inference=False, vis=False):
+        # Reshape input to [batch_size * patches_per_bag, channels, height, width]
+        xs_reshaped = xs.view(-1, xs.size(2), xs.size(3), xs.size(4))
+        
+        features = checkpoint.checkpoint_sequential(self._net, 200, xs_reshaped)
+        proto_features = checkpoint.checkpoint(self._add_on, features)
 
-        batch_size = xs.size(0)
-        patches_per_bag = xs.size(1)
-        chunk_size = 200
-        # stored_features = []
-        stored_pooled_scores = []
-        max_pooled_indices = []
+        pooled = checkpoint.checkpoint(self._pool, proto_features)
 
-        # Forward pass without gradients
-        with torch.no_grad():
-            for i in range(batch_size):
-                pooled_features = []
-                for j in range(0, patches_per_bag, chunk_size):
-                    chunk = xs[i, j:j+chunk_size]
-                    features = self._net(chunk)
-                    proto_features = self._add_on(features)
-                    pooled = self._pool(proto_features)
-                    pooled_features.append(pooled)
-                pooled_features = torch.cat(pooled_features, dim = 0)
+        # Reshape back to [batch_size, patches_per_bag, -1]
+        pooled = pooled.view(xs.size(0), xs.size(1), -1)
 
-                bag_pooled, max_indices =  pooled_features.max(dim=0)
-                # stored_features.append(proto_features)
-                stored_features = proto_features
-                stored_pooled_scores.append(bag_pooled)
-                max_pooled_indices.append(max_indices)
-            stored_pooled_scores = torch.stack(stored_pooled_scores,dim=0)
-            max_pooled_indices = torch.stack(max_pooled_indices, dim=0)
+        def bag_pooling(x):
+            return x.max(dim=1)[0]
+        bag_pooled =  checkpoint.checkpoint(bag_pooling, pooled)
 
         if inference:
-            clamped_pooled = torch.where(stored_pooled_scores < 0.1, torch.tensor(0., device=stored_pooled_scores.device), stored_pooled_scores)  #during inference, ignore all prototypes that have 0.1 similarity or lower
+            clamped_pooled = torch.where(bag_pooled < 0.1, 0., bag_pooled)  #during inference, ignore all prototypes that have 0.1 similarity or lower
             out = self._classification(clamped_pooled) #shape (bs*2, num_classes)
-            return stored_features, clamped_pooled, out
+            return proto_features, clamped_pooled, out
         else:
-            # Forward pass with gradients for the max-pooled instances
-            max_pooled_features = []
-            for i in range(batch_size):
-                bag_max=xs[i]
-                max_indices_i = torch.unique(torch.tensor(max_pooled_indices[i], dtype=torch.long))
-                xs_max = torch.index_select(bag_max, 0, max_indices_i)
-                
-                features_max = self._net(xs_max)
-                proto_features_max = self._add_on(features_max)
-                pooled_max = self._pool(proto_features_max)
+            out = self._classification(bag_pooled) #shape (bs*2, num_classes) 
 
-                bag_pooled_max =  pooled_max.max(dim=0)[0]
-                max_pooled_features.append(bag_pooled_max)
-            max_pooled_features = torch.stack(max_pooled_features, dim=0)
-
-            out = self._classification(max_pooled_features) #shape (bs*2, num_classes) 
-            
-            return proto_features_max, max_pooled_features, out
+            return proto_features, bag_pooled, out
 
 
 base_architecture_to_features = {'resnet18': resnet18_features,

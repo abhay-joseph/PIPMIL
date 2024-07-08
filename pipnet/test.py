@@ -11,6 +11,7 @@ from sklearn.metrics import accuracy_score, roc_auc_score, balanced_accuracy_sco
 @torch.no_grad()
 def eval_pipnet(net,
         test_loader: DataLoader,
+        criterion,
         epoch,
         device,
         log: Log = None,  
@@ -34,6 +35,8 @@ def eval_pipnet(net,
     y_preds = []
     y_preds_classes = []
     abstained = 0
+    total_loss = 0
+
     # Show progress on progress bar
     test_iter = tqdm(enumerate(test_loader),
                         total=len(test_loader),
@@ -72,7 +75,11 @@ def eval_pipnet(net,
             acc = acc_from_cm(cm_batch)
             test_iter.set_postfix_str(
                 f'SimANZCC: {correct_class_sim_scores_anz.mean().item():.2f}, ANZ: {almost_nz.mean().item():.1f}, LocS: {local_size.mean().item():.1f}, Acc: {acc:.3f}', refresh=False
-            )    
+            )
+
+            # Compute the loss
+            loss = criterion(F.log_softmax((torch.log1p(out**net.module._classification.normalization_multiplier)),dim=1), ys)
+            total_loss += loss.item()  # Accumulate the loss    
 
             (top1accs, top5accs) = topk_accuracy(out, ys, topk=[1,5])
             
@@ -99,12 +106,13 @@ def eval_pipnet(net,
     info['almost_sim_nonzeros'] = global_sim_anz/len(test_loader.dataset)
     info['local_size_all_classes'] = local_size_total / len(test_loader.dataset)
     info['almost_nonzeros'] = global_anz/len(test_loader.dataset)
+    info['loss'] = total_loss / len(test_loader)
 
     if net.module._num_classes == 2:
-        tp = cm[0][0]
-        fn = cm[0][1]
-        fp = cm[1][0]
-        tn = cm[1][1]
+        tn = cm[0][0]
+        fp = cm[0][1]
+        fn = cm[1][0]
+        tp = cm[1][1]
         print("TP: ", tp, "FN: ",fn, "FP:", fp, "TN:", tn, flush=True)
         sensitivity = tp/(tp+fn)
         specificity = tn/(tn+fp)
@@ -113,11 +121,11 @@ def eval_pipnet(net,
         try:
             for classname, classidx in test_loader.dataset.class_to_idx.items(): 
                 if classidx == 0:
-                    # print("Accuracy positive class (", classname, classidx,") (TPR, Sensitivity):", tp/(tp+fn))
-                    print("Accuracy negative class (", classname, classidx,") (TNR, Sensitivity):", tp/(tp+fn))
+                    print("Accuracy positive class (", classname, classidx,") (TPR, Sensitivity):", tp/(tp+fn))
+                    # print("Accuracy negative class (", classname, classidx,") (TNR, Sensitivity):", tp/(tp+fn))
                 elif classidx == 1:
-                    # print("Accuracy negative class (", classname, classidx,") (TNR, Specificity):", tn/(tn+fp))
-                    print("Accuracy positive class (", classname, classidx,") (TPR, Specificity):", tn/(tn+fp))
+                    print("Accuracy negative class (", classname, classidx,") (TNR, Specificity):", tn/(tn+fp))
+                    # print("Accuracy positive class (", classname, classidx,") (TPR, Specificity):", tn/(tn+fp))
         except ValueError:
             pass
         print("Balanced accuracy: ", balanced_accuracy_score(y_trues, y_preds_classes),flush=True)

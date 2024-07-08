@@ -1,9 +1,9 @@
 from pipnet.pipnet import PIPNet, get_network
-from pipnet.pipmil import PIPMIL, get_network_MIL
+from pipnet.pipmil_old import PIPMIL, get_network_MIL
 from util.log import Log
 import torch.nn as nn
 from util.args import get_args, save_args, get_optimizer_nn
-from util.data_camelyon import get_dataloaders
+from util.data import get_dataloaders
 from util.func import init_weights_xavier
 from pipnet.train import train_pipnet
 from pipnet.test import eval_pipnet, get_thresholds, eval_ood
@@ -26,7 +26,7 @@ def run_pipnet(args=None):
     np.random.seed(args.seed)
 
     args = args or get_args()
-    #assert args.batch_size > 1
+    # assert args.batch_size > 1
 
     # Create a logger
     log = Log(args.log_dir)
@@ -62,7 +62,7 @@ def run_pipnet(args=None):
     print("Device used: ", device, "with id", device_ids, flush=True)
     
     # Obtain the dataset and dataloaders
-    trainloader, trainloader_pretraining, projectloader, testloader, test_projectloader, classes = get_dataloaders(args, device)
+    trainloader, trainloader_pretraining, trainloader_normal, trainloader_normal_augment, projectloader, testloader, test_projectloader, classes = get_dataloaders(args, device)
     if len(classes)<=20:
         if args.validation_size == 0.:
             print("Classes: ", testloader.dataset.class_to_idx, flush=True)
@@ -204,10 +204,6 @@ def run_pipnet(args=None):
     frozen = True
     lrs_net = []
     lrs_classifier = []
-    train_losses = []
-    train_accuracies = []
-    test_losses = []
-    test_accuracies = []
    
     for epoch in range(1, args.epochs + 1):                      
         epochs_to_finetune = 3 #during finetuning, only train classification layer and freeze rest. usually done for a few epochs (at least 1, more depends on size of dataset)
@@ -261,13 +257,8 @@ def run_pipnet(args=None):
         train_info = train_pipnet(net, trainloader, optimizer_net, optimizer_classifier, scheduler_net, scheduler_classifier, criterion, epoch, args.epochs, device, pretrain=False, finetune=finetune)
         lrs_net+=train_info['lrs_net']
         lrs_classifier+=train_info['lrs_class']
-        train_losses.append(train_info['loss'])
-        train_accuracies.append(train_info['train_accuracy'])
-
         # Evaluate model
         eval_info = eval_pipnet(net, testloader, criterion, epoch, device, log)
-        test_losses.append(eval_info['loss']) 
-        test_accuracies.append(eval_info['top1_accuracy'])
         log.log_values('log_epoch_overview', epoch, eval_info['top1_accuracy'], eval_info['top5_accuracy'], eval_info['almost_sim_nonzeros'], eval_info['local_size_all_classes'], eval_info['almost_nonzeros'], eval_info['num non-zero prototypes'], train_info['train_accuracy'], train_info['loss'])
             
         with torch.no_grad():
@@ -285,32 +276,6 @@ def run_pipnet(args=None):
             plt.clf()
             plt.plot(lrs_classifier)
             plt.savefig(os.path.join(args.log_dir,'lr_class.png'))
-            
-    epochs = range(1, args.epochs + 1)
-
-    plt.clf()
-
-    # Plot Loss Curves
-    plt.figure()
-    plt.plot(epochs, train_losses, label='Training Loss')
-    plt.plot(epochs, test_losses, label='Test Loss')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.title('Training and Test Loss')
-    plt.savefig(os.path.join(args.log_dir,'loss_curves.png'))
-    plt.close()
-
-    # Plot Accuracy Curves
-    plt.figure()
-    plt.plot(epochs, train_accuracies, label='Training Accuracy')
-    plt.plot(epochs, test_accuracies, label='Test Accuracy')
-    plt.xlabel('Epochs')
-    plt.ylabel('Accuracy')
-    plt.legend()
-    plt.title('Training and Test Accuracy')
-    plt.savefig(os.path.join(args.log_dir,'accuracy_curves.png'))
-    plt.close()
                 
     net.eval()
     torch.save({'model_state_dict': net.state_dict(), 'optimizer_net_state_dict': optimizer_net.state_dict(), 'optimizer_classifier_state_dict': optimizer_classifier.state_dict()}, os.path.join(os.path.join(args.log_dir, 'checkpoints'), 'net_trained_last'))
@@ -373,8 +338,8 @@ def run_pipnet(args=None):
     # single instance
     # test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
     # MIL
-    test_path = os.path.split(os.path.split(os.path.split(testset_img0_path)[0])[0])[0]
-    # test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
+    # test_path = os.path.split(os.path.split(os.path.split(testset_img0_path)[0])[0])[0]
+    test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
 
     vis_pred(net, test_path, classes, device, args) 
     if args.extra_test_image_folder != '':

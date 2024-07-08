@@ -3,7 +3,7 @@ from pipnet.pipmil import PIPMIL, get_network_MIL
 from util.log import Log
 import torch.nn as nn
 from util.args import get_args, save_args, get_optimizer_nn
-from util.data_camelyon import get_dataloaders
+from util.data import get_dataloaders
 from util.func import init_weights_xavier
 from pipnet.train import train_pipnet
 from pipnet.test import eval_pipnet, get_thresholds, eval_ood
@@ -26,7 +26,7 @@ def run_pipnet(args=None):
     np.random.seed(args.seed)
 
     args = args or get_args()
-    #assert args.batch_size > 1
+    assert args.batch_size > 1
 
     # Create a logger
     log = Log(args.log_dir)
@@ -62,7 +62,7 @@ def run_pipnet(args=None):
     print("Device used: ", device, "with id", device_ids, flush=True)
     
     # Obtain the dataset and dataloaders
-    trainloader, trainloader_pretraining, projectloader, testloader, test_projectloader, classes = get_dataloaders(args, device)
+    trainloader, trainloader_pretraining, trainloader_normal, trainloader_normal_augment, projectloader, testloader, test_projectloader, classes = get_dataloaders(args, device)
     if len(classes)<=20:
         if args.validation_size == 0.:
             print("Classes: ", testloader.dataset.class_to_idx, flush=True)
@@ -73,17 +73,7 @@ def run_pipnet(args=None):
     feature_net, add_on_layers, pool_layer, classification_layer, num_prototypes = get_network_MIL(len(classes), args)
    
     # # Create a PIP-Net (Pre-Taining)
-    # net = PIPNet(num_classes=len(classes),
-    #                 num_prototypes=num_prototypes,
-    #                 feature_net = feature_net,
-    #                 args = args,
-    #                 add_on_layers = add_on_layers,
-    #                 pool_layer = pool_layer,
-    #                 classification_layer = classification_layer
-    #                 )
-
-    # Create a PIPMIL Net
-    net = PIPMIL(num_classes=len(classes),
+    net = PIPNet(num_classes=len(classes),
                     num_prototypes=num_prototypes,
                     feature_net = feature_net,
                     args = args,
@@ -91,6 +81,16 @@ def run_pipnet(args=None):
                     pool_layer = pool_layer,
                     classification_layer = classification_layer
                     )
+
+    # Create a PIPMIL Net
+    # net = PIPMIL(num_classes=len(classes),
+    #                 num_prototypes=num_prototypes,
+    #                 feature_net = feature_net,
+    #                 args = args,
+    #                 add_on_layers = add_on_layers,
+    #                 pool_layer = pool_layer,
+    #                 classification_layer = classification_layer
+    #                 )
 
     net = net.to(device=device)
     net = nn.DataParallel(net, device_ids = device_ids)    
@@ -136,8 +136,8 @@ def run_pipnet(args=None):
 
     # Forward one batch through the backbone to get the latent output size
     with torch.no_grad():
-        # xs1, _, _ = next(iter(trainloader_pretraining))
-        xs1, _, _ = next(iter(trainloader))
+        xs1, _, _ = next(iter(trainloader_pretraining))
+        # xs1, _, _ = next(iter(trainloader))
         xs1 = xs1.to(device)
         proto_features, _, _ = net(xs1)
         wshape = proto_features.shape[-1]
@@ -185,7 +185,7 @@ def run_pipnet(args=None):
         if ('convnext' in args.net or 'resnet' in args.net) and args.epochs_pretrain > 0:
             topks = visualize_topk(net, projectloader, len(classes), device, 'visualised_pretrained_prototypes_topk', args)
     
-    # sys.exit()
+    sys.exit()
 
     # SECOND TRAINING PHASE
     # re-initialize optimizers and schedulers for second training phase
@@ -204,13 +204,9 @@ def run_pipnet(args=None):
     frozen = True
     lrs_net = []
     lrs_classifier = []
-    train_losses = []
-    train_accuracies = []
-    test_losses = []
-    test_accuracies = []
    
     for epoch in range(1, args.epochs + 1):                      
-        epochs_to_finetune = 3 #during finetuning, only train classification layer and freeze rest. usually done for a few epochs (at least 1, more depends on size of dataset)
+        epochs_to_finetune = 10 #during finetuning, only train classification layer and freeze rest. usually done for a few epochs (at least 1, more depends on size of dataset)
         if epoch <= epochs_to_finetune and (args.epochs_pretrain > 0 or args.state_dict_dir_net != ''):
             for param in net.module._add_on.parameters():
                 param.requires_grad = False
@@ -261,13 +257,8 @@ def run_pipnet(args=None):
         train_info = train_pipnet(net, trainloader, optimizer_net, optimizer_classifier, scheduler_net, scheduler_classifier, criterion, epoch, args.epochs, device, pretrain=False, finetune=finetune)
         lrs_net+=train_info['lrs_net']
         lrs_classifier+=train_info['lrs_class']
-        train_losses.append(train_info['loss'])
-        train_accuracies.append(train_info['train_accuracy'])
-
         # Evaluate model
-        eval_info = eval_pipnet(net, testloader, criterion, epoch, device, log)
-        test_losses.append(eval_info['loss']) 
-        test_accuracies.append(eval_info['top1_accuracy'])
+        eval_info = eval_pipnet(net, testloader, epoch, device, log)
         log.log_values('log_epoch_overview', epoch, eval_info['top1_accuracy'], eval_info['top5_accuracy'], eval_info['almost_sim_nonzeros'], eval_info['local_size_all_classes'], eval_info['almost_nonzeros'], eval_info['num non-zero prototypes'], train_info['train_accuracy'], train_info['loss'])
             
         with torch.no_grad():
@@ -285,32 +276,6 @@ def run_pipnet(args=None):
             plt.clf()
             plt.plot(lrs_classifier)
             plt.savefig(os.path.join(args.log_dir,'lr_class.png'))
-            
-    epochs = range(1, args.epochs + 1)
-
-    plt.clf()
-
-    # Plot Loss Curves
-    plt.figure()
-    plt.plot(epochs, train_losses, label='Training Loss')
-    plt.plot(epochs, test_losses, label='Test Loss')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.title('Training and Test Loss')
-    plt.savefig(os.path.join(args.log_dir,'loss_curves.png'))
-    plt.close()
-
-    # Plot Accuracy Curves
-    plt.figure()
-    plt.plot(epochs, train_accuracies, label='Training Accuracy')
-    plt.plot(epochs, test_accuracies, label='Test Accuracy')
-    plt.xlabel('Epochs')
-    plt.ylabel('Accuracy')
-    plt.legend()
-    plt.title('Training and Test Accuracy')
-    plt.savefig(os.path.join(args.log_dir,'accuracy_curves.png'))
-    plt.close()
                 
     net.eval()
     torch.save({'model_state_dict': net.state_dict(), 'optimizer_net_state_dict': optimizer_net.state_dict(), 'optimizer_classifier_state_dict': optimizer_classifier.state_dict()}, os.path.join(os.path.join(args.log_dir, 'checkpoints'), 'net_trained_last'))
@@ -328,7 +293,7 @@ def run_pipnet(args=None):
                 torch.nn.init.zeros_(net.module._classification.weight[:,prot])
                 set_to_zero.append(prot)
         print("Weights of prototypes", set_to_zero, "are set to zero because it is never detected with similarity>0.1 in the training set", flush=True)
-        eval_info = eval_pipnet(net, testloader, criterion, "notused"+str(args.epochs), device, log)
+        eval_info = eval_pipnet(net, testloader, "notused"+str(args.epochs), device, log)
         log.log_values('log_epoch_overview', "notused"+str(args.epochs), eval_info['top1_accuracy'], eval_info['top5_accuracy'], eval_info['almost_sim_nonzeros'], eval_info['local_size_all_classes'], eval_info['almost_nonzeros'], eval_info['num non-zero prototypes'], "n.a.", "n.a.")
 
     print("classifier weights: ", net.module._classification.weight, flush=True)
@@ -373,8 +338,8 @@ def run_pipnet(args=None):
     # single instance
     # test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
     # MIL
-    test_path = os.path.split(os.path.split(os.path.split(testset_img0_path)[0])[0])[0]
-    # test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
+    # test_path = os.path.split(os.path.split(os.path.split(testset_img0_path)[0])[0])[0]
+    test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
 
     vis_pred(net, test_path, classes, device, args) 
     if args.extra_test_image_folder != '':

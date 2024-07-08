@@ -153,6 +153,9 @@ class ResNet_features(nn.Module):
         self.layer3 = self._make_layer(block=block, planes=256, num_blocks=self.layers[2], stride=1)
         self.layer4 = self._make_layer(block=block, planes=512, num_blocks=self.layers[3], stride=1)
 
+        # Additional convolutional layer to downsample from 7x7 to 4x4
+        self.downsample_conv = nn.Conv2d(512, 512, kernel_size=3, stride=4, padding=1, bias=False)
+
         # initialize the parameters
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -206,6 +209,9 @@ class ResNet_features(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
+
+        # Apply the additional downsampling layer
+        x = self.downsample_conv(x)
 
         return x
 
