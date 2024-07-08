@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --time=30
 #SBATCH --mem=100gb 
-#SBATCH --job-name=slurm-CAMELYON_train_resnet18_4000
+#SBATCH --job-name=slurm-_NEW_train_test_3
 #SBATCH --partition=dev_gpu_4_a100
 #SBATCH --gres=gpu:1
-#SBATCH --output=slurm-CAMELYON_train_resnet18_4000.out
+#SBATCH --output=slurm-_NEW_train_test_3.out
 
 # PIPNet directory
 cd /pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet
@@ -20,10 +20,10 @@ conda activate thesis_env
 # python main.py --dataset 'CUB-200-2011' --validation_size 0.0 --net 'convnext_tiny_26' --batch_size 64  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/pipnet_cub_cnext26_3' --num_features 0 --image_size 224 --state_dict_dir_net '' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 10 --seed 1 --gpu_ids '' --num_workers 8 
 
 # PRE-TRAINING
-# python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 5  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_CAMELYON_pretrain_resnet18_3' --num_features 0 --image_size 224 --state_dict_dir_net '' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 10 --seed 631056511 --gpu_ids '' --num_workers 8 --bias
+# python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 5  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_NEW_pretrain' --num_features 0 --image_size 224 --state_dict_dir_net '' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 10 --seed 631056511 --gpu_ids '' --num_workers 8 --bias
 
 # TRAINING
-python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 2 --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_CAMELYON_train_resnet18_10000_2' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet/runs/PIPMIL_CAMELYON_pretrain_resnet18_3/checkpoints/net_pretrained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 631056511 --gpu_ids '' --num_workers 8 --bias
+python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 1 --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL-_NEW_train_test_3' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet/runs/PIPMIL_NEW_pretrain/checkpoints/net_pretrained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 207121037 --gpu_ids '' --num_workers 8 --bias
 
 # PREPROCESSING SAMPLES
 # python3 util/camelyon_resnet.py

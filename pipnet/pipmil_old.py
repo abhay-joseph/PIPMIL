@@ -6,6 +6,7 @@ from features.resnet_features import resnet18_features, resnet34_features, resne
 from features.convnext_features import convnext_tiny_26_features, convnext_tiny_13_features 
 import torch
 from torch import Tensor
+import torch.utils.checkpoint as checkpoint
 
 class PIPMIL(nn.Module):
     def __init__(self,

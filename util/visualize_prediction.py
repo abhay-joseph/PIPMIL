@@ -39,8 +39,10 @@ def vis_pred(net, vis_test_dir, classes, device, args: argparse.Namespace):
                             normalize])
 
     # vis_test_set = torchvision.datasets.ImageFolder(vis_test_dir, transform=transform_no_augment)
-    vis_test_set = CamelyonPreprocessedBagsCross(vis_test_dir, train=False, test=True,
-                                                     all_labels=True, push=True)
+    # vis_test_set = CamelyonPreprocessedBagsCross(vis_test_dir, train=False, test=True,
+    #                                                  all_labels=True, push=True)
+    vis_test_set = MultipleInstanceDataset(vis_test_dir, transform=transform_no_augment)
+
     # vis_test_loader = util.data.MILBagLoader(vis_test_dir,
     #                                             transform1=transform_no_augment,
     #                                             train=False, 
@@ -135,8 +137,9 @@ def vis_pred_experiments(net, imgs_dir, classes, device, args: argparse.Namespac
                             normalize])
 
     #vis_test_set = torchvision.datasets.ImageFolder(imgs_dir, transform=transform_no_augment)
-    vis_test_set = CamelyonPreprocessedBagsCross(imgs_dir, train=False, test=True,
-                                                     all_labels=True, push=True)
+    # vis_test_set = CamelyonPreprocessedBagsCross(imgs_dir, train=False, test=True,
+    #                                                  all_labels=True, push=True)
+    vis_test_set = MultipleInstanceDataset(imgs_dir, transform=transform_no_augment)
     
     # vis_test_loader = util.data.MILBagLoader(imgs_dir,
     #                                             transform1=transform_no_augment,
