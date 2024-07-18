@@ -20,6 +20,8 @@ class PIPMIL(nn.Module):
                  ):
         super().__init__()
         assert num_classes > 0
+        # self.quant = torch.ao.quantization.QuantStub()
+        # self.dequant = torch.ao.quantization.DeQuantStub()
         self._num_features = args.num_features
         self._num_classes = num_classes
         self._num_prototypes = num_prototypes
@@ -36,58 +38,71 @@ class PIPMIL(nn.Module):
     #     return pooled
 
     # Only designed for batch size = 1 or uniform sized bags
-    def forward(self, xs,  inference=False, vis=False):
-
+    def forward(self, xs, max_indices=None, inference=False, vis=False):
         batch_size = xs.size(0)
+        print(batch_size)
         patches_per_bag = xs.size(1)
-        chunk_size = 200
-        # stored_features = []
+        chunk_size = 50
         stored_pooled_scores = []
         max_pooled_indices = []
+        stored_pooled_features = []
 
         # Forward pass without gradients
-        with torch.no_grad():
-            for i in range(batch_size):
-                pooled_features = []
-                for j in range(0, patches_per_bag, chunk_size):
-                    chunk = xs[i, j:j+chunk_size]
-                    features = self._net(chunk)
-                    proto_features = self._add_on(features)
-                    pooled = self._pool(proto_features)
-                    pooled_features.append(pooled)
-                pooled_features = torch.cat(pooled_features, dim = 0)
+        if max_indices==None or inference==True:
+            with torch.autocast(device_type="cuda", enabled=True):
+                for i in range(batch_size):
+                    stored_pooled = []
+                    stored_features = []
+                    for j in range(0, patches_per_bag, chunk_size):
+                        chunk = xs[i, j:j+chunk_size]
+                        # chunk  = self.quant(chunk)
+                        features = self._net(chunk)
+                        proto_features = self._add_on(features)
+                        # proto_features = self.dequant(proto_features)
+                        pooled = self._pool(proto_features)
+                        stored_features.append(proto_features)
+                        stored_pooled.append(pooled)
+                    stored_features = torch.cat(stored_features, dim=0)
+                    stored_pooled = torch.cat(stored_pooled, dim=0)
 
-                bag_pooled, max_indices =  pooled_features.max(dim=0)
-                # stored_features.append(proto_features)
-                stored_features = proto_features
-                stored_pooled_scores.append(bag_pooled)
-                max_pooled_indices.append(max_indices)
-            stored_pooled_scores = torch.stack(stored_pooled_scores,dim=0)
-            max_pooled_indices = torch.stack(max_pooled_indices, dim=0)
-
-        if inference:
-            clamped_pooled = torch.where(stored_pooled_scores < 0.1, torch.tensor(0., device=stored_pooled_scores.device), stored_pooled_scores)  #during inference, ignore all prototypes that have 0.1 similarity or lower
-            out = self._classification(clamped_pooled) #shape (bs*2, num_classes)
-            return stored_features, clamped_pooled, out
+                    bag_pooled, max_instances =  stored_pooled.max(dim=0)
+                    stored_pooled_features.append(stored_features)
+                    stored_pooled_scores.append(bag_pooled)
+                    max_pooled_indices.append(max_instances)
+                stored_pooled_features = torch.stack(stored_pooled_features,dim=0)
+                stored_pooled_scores = torch.stack(stored_pooled_scores,dim=0)
+                max_pooled_indices = torch.stack(max_pooled_indices, dim=0)
+                
+                clamped_pooled = torch.where(stored_pooled_scores < 0.1, torch.tensor(0., device=stored_pooled_scores.device), stored_pooled_scores)  #during inference, ignore all prototypes that have 0.1 similarity or lower
+                out = self._classification(clamped_pooled) #shape (bs*2, num_classes)
+                return stored_features, clamped_pooled, out, max_pooled_indices 
+            
+        # if inference:
+        #     clamped_pooled = torch.where(stored_pooled_scores < 0.1, torch.tensor(0., device=stored_pooled_scores.device), stored_pooled_scores)  #during inference, ignore all prototypes that have 0.1 similarity or lower
+        #     out = self._classification(clamped_pooled) #shape (bs*2, num_classes)
+        #     return stored_features, clamped_pooled, out
         else:
             # Forward pass with gradients for the max-pooled instances
             max_pooled_features = []
+            max_proto_features = []
             for i in range(batch_size):
                 bag_max=xs[i]
-                max_indices_i = torch.unique(torch.tensor(max_pooled_indices[i], dtype=torch.long))
+                max_indices_i = torch.unique(max_indices)
                 xs_max = torch.index_select(bag_max, 0, max_indices_i)
-                
+                print(xs_max.shape)
                 features_max = self._net(xs_max)
                 proto_features_max = self._add_on(features_max)
+                max_proto_features.append(proto_features_max)
                 pooled_max = self._pool(proto_features_max)
 
                 bag_pooled_max =  pooled_max.max(dim=0)[0]
                 max_pooled_features.append(bag_pooled_max)
+            max_proto_features = torch.stack(max_proto_features, dim=0)
             max_pooled_features = torch.stack(max_pooled_features, dim=0)
 
             out = self._classification(max_pooled_features) #shape (bs*2, num_classes) 
             
-            return proto_features_max, max_pooled_features, out
+            return max_proto_features, max_pooled_features, out
 
 
 base_architecture_to_features = {'resnet18': resnet18_features,

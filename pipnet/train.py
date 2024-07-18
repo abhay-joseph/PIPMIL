@@ -64,12 +64,12 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
         # Reset the gradients
         optimizer_classifier.zero_grad(set_to_none=True)
         optimizer_net.zero_grad(set_to_none=True)
+
+        # Forward pass to get max_indices using xs1
+        with torch.no_grad():
+            proto_features1, pooled1, out1, max_indices = net(xs1)
        
-        # Perform a forward pass through the network
-        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=True, record_shapes=True) as prof:
-        #     proto_features, pooled, out = net(torch.cat([xs1, xs2]))
-        # print(prof.key_averages().table(sort_by="cpu_memory_usage", row_limit=10))
-        proto_features, pooled, out = net(torch.cat([xs1, xs2]))
+        proto_features, pooled, out = net(torch.cat([xs1, xs2]), max_indices=max_indices)
         loss, acc = calculate_loss(proto_features, pooled, out, ys, align_pf_weight, t_weight, unif_weight, cl_weight, net.module._classification.normalization_multiplier, pretrain, finetune, criterion, train_iter, print=True, EPS=1e-8)
         
         # Compute the gradient
@@ -118,22 +118,21 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
 def calculate_loss(proto_features, pooled, out, ys1, align_pf_weight, t_weight, unif_weight, cl_weight, net_normalization_multiplier, pretrain, finetune, criterion, train_iter, print=True, EPS=1e-10):
     ys = torch.cat([ys1,ys1])
     pooled1, pooled2 = pooled.chunk(2)
-    # pf1, pf2 = proto_features.chunk(2)
+    pf1, pf2 = proto_features.chunk(2)
 
-    # embv2 = pf2.flatten(start_dim=2).permute(0,2,1).flatten(end_dim=1)
-    # embv1 = pf1.flatten(start_dim=2).permute(0,2,1).flatten(end_dim=1)
+    embv2 = pf2.flatten(start_dim=3).permute(0,1,3,2).flatten(end_dim=2)
+    embv1 = pf1.flatten(start_dim=3).permute(0,1,3,2).flatten(end_dim=2)
     
-    # a_loss_pf = (align_loss(embv1, embv2.detach())+ align_loss(embv2, embv1.detach()))/2.
-    # tanh_loss = -(torch.log(torch.tanh(torch.sum(pooled1,dim=0))+EPS).mean() + torch.log(torch.tanh(torch.sum(pooled2,dim=0))+EPS).mean())/2.
+    a_loss_pf = (align_loss(embv1, embv2.detach())+ align_loss(embv2, embv1.detach()))/2.
+    tanh_loss = -(torch.log(torch.tanh(torch.sum(pooled1,dim=0))+EPS).mean() + torch.log(torch.tanh(torch.sum(pooled2,dim=0))+EPS).mean())/2.
     
-    # if not finetune:
-    #     loss = align_pf_weight*a_loss_pf
-    #     loss += t_weight * tanh_loss
+    if not finetune:
+        loss = align_pf_weight*a_loss_pf
+        loss += t_weight * tanh_loss
     
     if not pretrain:
         softmax_inputs = torch.log1p(out**net_normalization_multiplier)
         class_loss = criterion(F.log_softmax((softmax_inputs),dim=1),ys)
-        loss = 0
         
         if finetune:
             loss= cl_weight * class_loss
@@ -178,6 +177,8 @@ def uniform_loss(x, t=2):
 
 # from https://gitlab.com/mipl/carl/-/blob/main/losses.py
 def align_loss(inputs, targets, EPS=1e-12):
+    print(inputs.shape)
+    print(targets.shape)
     assert inputs.shape == targets.shape
     assert targets.requires_grad == False
     

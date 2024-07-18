@@ -51,7 +51,7 @@ def eval_pipnet(net,
         with torch.no_grad():
             net.module._classification.weight.copy_(torch.clamp(net.module._classification.weight.data - 1e-3, min=0.)) 
             # Use the model to classify this batch of input data
-            _, pooled, out = net(xs, inference=True)
+            _, pooled, out, _ = net(xs, inference=True)
             max_out_score, ys_pred = torch.max(out, dim=1)
             ys_pred_scores = torch.amax(F.softmax((torch.log1p(out**net.module._classification.normalization_multiplier)),dim=1),dim=1)
             abstained += (max_out_score.shape[0] - torch.count_nonzero(max_out_score))
@@ -194,7 +194,7 @@ def get_thresholds(net,
         
         with torch.no_grad():
             # Use the model to classify this batch of input data
-            _, pooled, out = net(xs)
+            _, pooled, out, _ = net(xs)
 
             ys_pred = torch.argmax(out, dim=1)
             for pred in range(len(ys_pred)):
@@ -283,7 +283,7 @@ def eval_ood(net,
         
         with torch.no_grad():
             # Use the model to classify this batch of input data
-            _, pooled, out = net(xs)
+            _, pooled, out, _ = net(xs)
             max_out_score, ys_pred = torch.max(out, dim=1)
             ys_pred = torch.argmax(out, dim=1)
             abstained += (max_out_score.shape[0] - torch.count_nonzero(max_out_score))

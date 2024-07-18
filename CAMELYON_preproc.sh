@@ -7,10 +7,10 @@
 #SBATCH --output=slurm-preproc_camelyon_resnet.out
 
 # PIPNet directory
-cd /pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet
+cd /pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/PIPNet
 
 # Activate environment
-#source /pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPMIL/thesis_env/bin/activate
+#source /pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/PIPMIL/thesis_env/bin/activate
 conda activate thesis_env
 
 # # Run with pretrained model

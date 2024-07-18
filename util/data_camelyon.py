@@ -21,7 +21,7 @@ from util.utils_augemntation import RandomRotate
 
 class MultipleInstanceDataset(Dataset):
     '''Custom Dataset class imitating Imagefolder format for MIL setup, for CAMELYON'''
-    def __init__(self, root, transform=None, max_bag=512, random_state=3):
+    def __init__(self, root, transform=None, max_bag=20000, random_state=3):
         self.max_bag = max_bag
         self.random_state = random_state
         self.root = root
@@ -126,7 +126,7 @@ class MILPretrainDataset(Dataset):
 
 class CamelyonPreprocessedBagsCross(Dataset):
     def __init__(self, path, train=True, test=False, push=False, shuffle_bag=False, data_augmentation=False,
-                 loc_info=False, folds=10, fold_id=1, random_state=3, all_labels=False, max_bag=20000):
+                 loc_info=False, folds=10, fold_id=1, random_state=3, all_labels=False, max_bag=1000):
         self.path = path
         self.train = train
         self.test = test
@@ -397,7 +397,7 @@ def get_data(args: argparse.Namespace):
         return get_birds(True, './data/CUB_200_2011/dataset/train_crop', './data/CUB_200_2011/dataset/train', './data/CUB_200_2011/dataset/test_crop', args.image_size, args.seed, args.validation_size, './data/CUB_200_2011/dataset/train', './data/CUB_200_2011/dataset/test_full')
 
     if args.dataset == 'CAMELYON':
-        # return get_camelyon('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',train= True, img_size = 224, seed = args.seed, validation_size = args.validation_size)
+        # return get_camelyon('/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/ProtoMIL/data/CAMELYON_patches',train= True, img_size = 224, seed = args.seed, validation_size = args.validation_size)
         return get_camelyon(True, 
         './data/CAMELYON/dataset/train','./data/CAMELYON/dataset/train','./data/CAMELYON/dataset/test', img_size = 224, seed = args.seed, validation_size = args.validation_size)
         
@@ -534,14 +534,14 @@ def create_datasets(transform1, transform2, transform_no_augment, num_channels:i
 
 def create_datasets_MIL(transform1, transform2, transform_no_augment, num_channels:int, train_dir:str, project_dir: str, test_dir:str, seed:int, validation_size:float, train_dir_pretrain = None, test_dir_projection = None, transform1p=None):
     
-    # trainvalset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, shuffle_bag=True, data_augmentation=True, random_state=seed)
+    # trainvalset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, shuffle_bag=True, data_augmentation=True, random_state=seed)
     # classes = trainvalset.classes
     # targets = [label for k, label in trainvalset.labels.items() if os.path.exists(os.path.join(trainvalset.path, k, trainvalset.embed_name))]
     # indices = list(range(len(trainvalset)))
 
     # train_indices = indices
     
-    # trainset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, shuffle_bag=True,
+    # trainset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, shuffle_bag=True,
     #                                        data_augmentation=True,
     #                                        random_state=seed)
     
@@ -549,12 +549,12 @@ def create_datasets_MIL(transform1, transform2, transform_no_augment, num_channe
     # trainset_normal = trainset
     # trainset_normal_augment = trainset
 
-    # projectset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, push=True, shuffle_bag=True,
+    # projectset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=True, push=True, shuffle_bag=True,
     #                                             random_state=seed)
     
-    # testset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=False, test=True, all_labels=True,
+    # testset = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=False, test=True, all_labels=True,
     #                                             random_state=seed)
-    # testset_projection = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=False, test=True,
+    # testset_projection = CamelyonPreprocessedBagsCross(path="/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/", train=False, test=True,
     #                                                  all_labels=True, push=True)
     
     

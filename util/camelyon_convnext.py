@@ -77,7 +77,7 @@ class ImageDataset(Dataset):
         return img
 
 classes = [0,1]
-root = '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet/data/CAMELYON/dataset'
+root = '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/PIPNet/data/CAMELYON/dataset'
 data = []
 
 for split in os.listdir(root):

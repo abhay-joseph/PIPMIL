@@ -12,7 +12,7 @@ from torchvision.transforms import transforms
 
 # import utils_augemntation
 
-MODEL_PATH = '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet/runs/PIPMIL_CAMELYON_pretrain_resnet18/checkpoints/net_pretrained'
+MODEL_PATH = '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/PIPNet/runs/PIPMIL_CAMELYON_pretrain_resnet18/checkpoints/net_pretrained'
 RETURN_PREACTIVATION = True  # return features from the model, if false return classification logits
 NUM_CLASSES = 4  # only used if RETURN_PREACTIVATION = False
 
@@ -79,7 +79,7 @@ class ImageDataset(Dataset):
         return img
 
 # classes = [0,1]
-# root = '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/PIPNet/data/CAMELYON/dataset'
+# root = '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/PIPNet/data/CAMELYON/dataset'
 # data = []
 
 # for split in os.listdir(root):
@@ -89,9 +89,9 @@ class ImageDataset(Dataset):
 #         data += [os.path.join(class_path,bag_path) for bag_path in os.listdir(class_path)]
 
 data = []
-data += ['/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/normal_{:03d}.tif/'.format(i) for i in range(1, 161)]
-data += ['/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/tumor_{:03d}.tif/'.format(i) for i in range(1, 112)]
-data += ['/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/test_{:03d}.tif/'.format(i) for i in range(1, 131)]
+data += ['/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/normal_{:03d}.tif/'.format(i) for i in range(1, 161)]
+data += ['/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/tumor_{:03d}.tif/'.format(i) for i in range(1, 112)]
+data += ['/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/ProtoMIL/data/CAMELYON_patches/test_{:03d}.tif/'.format(i) for i in range(1, 131)]
 
 for dataset_path in data:
     out_file = os.path.join(dataset_path, 'embeddings_resnet.pth')
