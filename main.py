@@ -60,6 +60,9 @@ def run_pipnet(args=None):
      
     # Log which device was actually used
     print("Device used: ", device, "with id", device_ids, flush=True)
+
+    print("GPU Memory allocated:", torch.cuda.memory_allocated())
+    print("GPU Max Memory allocated:", torch.cuda.max_memory_allocated())
     
     # Obtain the dataset and dataloaders
     trainloader, trainloader_pretraining, projectloader, testloader, test_projectloader, classes = get_dataloaders(args, device)

@@ -3,12 +3,19 @@ import torch
 import torch.nn.functional as F
 import torch.optim
 import torch.utils.data
+from util.log import Log
+from util.args import get_args, save_args, get_optimizer_nn
+import GPUtil
 # from torch.profiler import profile, record_function, ProfilerActivity
 import math
 import gc
 
 def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, scheduler_net, scheduler_classifier, criterion, epoch, nr_epochs, device, pretrain=False, finetune=False, progress_prefix: str = 'Train Epoch'):
 
+    args = get_args()
+    log = Log(args.log_dir)
+    log.create_log('train_info'+str(epoch), 'iteration', 'epoch', 'input_size', 'target_size', 'mem_alloc', 'max_mem_alloc', 'train_accuracy', 'train_loss', 'max_indices', 'gradients', 'losses')
+        
     # Make sure the model is in train mode
     net.train()
     
@@ -57,7 +64,7 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
     lrs_net = []
     lrs_class = []
     # Iterate through the data set to update leaves, prototypes and network
-    for i, (xs1, xs2, ys) in train_iter:       
+    for i, (xs1, xs2, ys) in train_iter:
         
         xs1, xs2, ys = xs1.to(device), xs2.to(device), ys.to(device)
        
@@ -67,7 +74,9 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
 
         # Forward pass to get max_indices using xs1
         with torch.no_grad():
-            proto_features1, pooled1, out1, max_indices = net(xs1)
+            _, _, _, max_indices = net(xs1)        
+        max_indices_np = torch.unique(max_indices).cpu().numpy()
+
        
         proto_features, pooled, out = net(torch.cat([xs1, xs2]), max_indices=max_indices)
         loss, acc = calculate_loss(proto_features, pooled, out, ys, align_pf_weight, t_weight, unif_weight, cl_weight, net.module._classification.normalization_multiplier, pretrain, finetune, criterion, train_iter, print=True, EPS=1e-8)
@@ -104,8 +113,18 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
         #             print(type(obj), obj.size())
         #     except:
         #         pass
+
+        # Log gradients for each parameter
+        gradients = {}
+        for name, param in net.named_parameters():
+            if param.grad is not None:
+                gradients[name] = param.grad.cpu().numpy()
+
+        # Log the information for this iteration
+        log.log_values('train_info'+str(epoch), i, epoch, str(xs1.size()), str(ys.size()), str(torch.cuda.memory_allocated()/(1024**3))+"GB", str(torch.cuda.max_memory_allocated()/(1024**3))+"GB", acc, loss.item(), str(max_indices_np), str(gradients), str(loss.item()))
+
         # # Delete batch from memory
-        # del xs1, xs2, ys
+        del xs1, xs2, ys
         torch.cuda.empty_cache()
         
     train_info['train_accuracy'] = total_acc/float(i+1)
@@ -177,8 +196,6 @@ def uniform_loss(x, t=2):
 
 # from https://gitlab.com/mipl/carl/-/blob/main/losses.py
 def align_loss(inputs, targets, EPS=1e-12):
-    print(inputs.shape)
-    print(targets.shape)
     assert inputs.shape == targets.shape
     assert targets.requires_grad == False
     

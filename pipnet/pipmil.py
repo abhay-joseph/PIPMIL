@@ -52,7 +52,7 @@ class PIPMIL(nn.Module):
             with torch.autocast(device_type="cuda", enabled=True):
                 for i in range(batch_size):
                     stored_pooled = []
-                    stored_features = []
+                    # stored_features = []
                     for j in range(0, patches_per_bag, chunk_size):
                         chunk = xs[i, j:j+chunk_size]
                         # chunk  = self.quant(chunk)
@@ -60,22 +60,22 @@ class PIPMIL(nn.Module):
                         proto_features = self._add_on(features)
                         # proto_features = self.dequant(proto_features)
                         pooled = self._pool(proto_features)
-                        stored_features.append(proto_features)
+                        # stored_features.append(proto_features)
                         stored_pooled.append(pooled)
-                    stored_features = torch.cat(stored_features, dim=0)
+                    # stored_features = torch.cat(stored_features, dim=0)
                     stored_pooled = torch.cat(stored_pooled, dim=0)
 
                     bag_pooled, max_instances =  stored_pooled.max(dim=0)
-                    stored_pooled_features.append(stored_features)
+                    # stored_pooled_features.append(stored_features)
                     stored_pooled_scores.append(bag_pooled)
                     max_pooled_indices.append(max_instances)
-                stored_pooled_features = torch.stack(stored_pooled_features,dim=0)
+                # stored_pooled_features = torch.stack(stored_pooled_features,dim=0)
                 stored_pooled_scores = torch.stack(stored_pooled_scores,dim=0)
                 max_pooled_indices = torch.stack(max_pooled_indices, dim=0)
                 
                 clamped_pooled = torch.where(stored_pooled_scores < 0.1, torch.tensor(0., device=stored_pooled_scores.device), stored_pooled_scores)  #during inference, ignore all prototypes that have 0.1 similarity or lower
                 out = self._classification(clamped_pooled) #shape (bs*2, num_classes)
-                return stored_features, clamped_pooled, out, max_pooled_indices 
+                return proto_features, clamped_pooled, out, max_pooled_indices 
             
         # if inference:
         #     clamped_pooled = torch.where(stored_pooled_scores < 0.1, torch.tensor(0., device=stored_pooled_scores.device), stored_pooled_scores)  #during inference, ignore all prototypes that have 0.1 similarity or lower
@@ -89,7 +89,6 @@ class PIPMIL(nn.Module):
                 bag_max=xs[i]
                 max_indices_i = torch.unique(max_indices)
                 xs_max = torch.index_select(bag_max, 0, max_indices_i)
-                print(xs_max.shape)
                 features_max = self._net(xs_max)
                 proto_features_max = self._add_on(features_max)
                 max_proto_features.append(proto_features_max)
