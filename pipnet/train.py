@@ -136,7 +136,8 @@ def train_pipnet(net, train_loader, optimizer_net, optimizer_classifier, schedul
 
 def calculate_loss(proto_features, pooled, out, ys1, align_pf_weight, t_weight, unif_weight, cl_weight, net_normalization_multiplier, pretrain, finetune, criterion, train_iter, print=True, EPS=1e-10):
     ys = torch.cat([ys1,ys1])
-    pooled1, pooled2 = pooled.chunk(2)
+    # pooled1, pooled2 = pooled.chunk(2)
+    pooled1, pooled2 = pooled[0], pooled[1]
     pf1, pf2 = proto_features.chunk(2)
 
     embv2 = pf2.flatten(start_dim=3).permute(0,1,3,2).flatten(end_dim=2)

@@ -7,6 +7,8 @@ from features.convnext_features import convnext_tiny_26_features, convnext_tiny_
 import torch
 from torch import Tensor
 import torch.utils.checkpoint as checkpoint
+from memory_profiler import profile
+
 
 class PIPMIL(nn.Module):
     def __init__(self,
@@ -31,16 +33,10 @@ class PIPMIL(nn.Module):
         self._classification = classification_layer
         self._multiplier = classification_layer.normalization_multiplier
 
-    # def forward_single_instance(self, x):
-    #     features = self._net(x)
-    #     proto_features = self._add_on(features)
-    #     pooled = self._pool(proto_features)
-    #     return pooled
-
     # Only designed for batch size = 1 or uniform sized bags
+    # @profile
     def forward(self, xs, max_indices=None, inference=False, vis=False):
         batch_size = xs.size(0)
-        print(batch_size)
         patches_per_bag = xs.size(1)
         chunk_size = 50
         stored_pooled_scores = []
@@ -84,6 +80,7 @@ class PIPMIL(nn.Module):
         else:
             # Forward pass with gradients for the max-pooled instances
             max_pooled_features = []
+            max_bag_pooled_features = []
             max_proto_features = []
             for i in range(batch_size):
                 bag_max=xs[i]
@@ -93,13 +90,15 @@ class PIPMIL(nn.Module):
                 proto_features_max = self._add_on(features_max)
                 max_proto_features.append(proto_features_max)
                 pooled_max = self._pool(proto_features_max)
+                max_pooled_features.append(pooled_max)
 
                 bag_pooled_max =  pooled_max.max(dim=0)[0]
-                max_pooled_features.append(bag_pooled_max)
+                max_bag_pooled_features.append(bag_pooled_max)
             max_proto_features = torch.stack(max_proto_features, dim=0)
             max_pooled_features = torch.stack(max_pooled_features, dim=0)
+            max_bag_pooled_features = torch.stack(max_bag_pooled_features, dim=0)
 
-            out = self._classification(max_pooled_features) #shape (bs*2, num_classes) 
+            out = self._classification(max_bag_pooled_features) #shape (bs*2, num_classes) 
             
             return max_proto_features, max_pooled_features, out
 

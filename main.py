@@ -17,7 +17,9 @@ import numpy as np
 from shutil import copy
 import matplotlib.pyplot as plt
 from copy import deepcopy
+from memory_profiler import profile
 
+@profile
 def run_pipnet(args=None):
 
     torch.manual_seed(args.seed)
@@ -185,6 +187,8 @@ def run_pipnet(args=None):
         torch.save({'model_state_dict': net.state_dict(), 'optimizer_net_state_dict': optimizer_net.state_dict()}, os.path.join(os.path.join(args.log_dir, 'checkpoints'), 'net_pretrained'))
         net.train()
     with torch.no_grad():
+        # FOR ONLY VISUALIZATION
+        # if ('convnext' in args.net or 'resnet' in args.net):
         if ('convnext' in args.net or 'resnet' in args.net) and args.epochs_pretrain > 0:
             topks = visualize_topk(net, projectloader, len(classes), device, 'visualised_pretrained_prototypes_topk', args)
     

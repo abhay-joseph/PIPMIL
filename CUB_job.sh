@@ -1,16 +1,16 @@
 #!/bin/bash
-#SBATCH --time=48:00:00
-#SBATCH --mem=498gb 
+#SBATCH --time=30
+#SBATCH --mem=100gb 
 #SBATCH --job-name=slurm-PIPMIL_SIL_full
-#SBATCH --partition=gpu_4_a100
+#SBATCH --partition=dev_gpu_4_a100
 #SBATCH --gres=gpu:1
-#SBATCH --output=slurm-PIPMIL_SIL_full.out
+#SBATCH --output=slurm-PIPMIL_SIL_full_5.out
 
 # PIPNet directory
-cd /pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/PIPNet
+cd /pfs/work7/workspace/scratch/ma_ajoseph-ProtoData3/ma_ajoseph/PIPNet
 
 # Activate environment
-#source /pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/PIPMIL/thesis_env/bin/activate
+#source /pfs/work7/workspace/scratch/ma_ajoseph-ProtoData3/ma_ajoseph/PIPMIL/thesis_env/bin/activate
 conda activate thesis_env
 
 # # Run with pretrained model
@@ -21,10 +21,14 @@ conda activate thesis_env
 
 # PRE-TRAINING
 # python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 5  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_NEW_pretrain' --num_features 0 --image_size 224 --state_dict_dir_net '' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 10 --seed 631056511 --gpu_ids '' --num_workers 8 --bias
+# python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 5  --batch_size_pretrain 128 --epochs 60 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_NEW_pretrain_visualization' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData3/ma_ajoseph/PIPNet/runs/PIPMIL_NEW_pretrain/checkpoints/net_pretrained' --freeze_epochs 0 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 631056511 --gpu_ids '' --num_workers 8 --bias
 
 # TRAINING
-python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 1 --batch_size_pretrain 128 --epochs 20 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_SIL_1000_ATcl-207121037_full' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/PIPNet/runs/PIPMIL_NEW_pretrain/checkpoints/net_pretrained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 207121037 --gpu_ids '' --num_workers 8 --bias
-# python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 1 --batch_size_pretrain 128 --epochs 20 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_SIL_1000_ATcl-207121037_2' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData2/ma_ajoseph/PIPNet/runs/PIPMIL_SIL_1000_ATcl-207121037/checkpoints/net_trained' --freeze_epochs 0 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 207121037 --gpu_ids '' --num_workers 8 --bias
+python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 1 --batch_size_pretrain 128 --epochs 10 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_SIL_1000_ATcl-207121037_full_test_4' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData3/ma_ajoseph/PIPNet/runs/PIPMIL_NEW_pretrain/checkpoints/net_pretrained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 207121037 --gpu_ids '' --num_workers 8 --bias
+# python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'convnext_tiny_26' --batch_size 1 --batch_size_pretrain 128 --epochs 20 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_SIL_1000_ATcl-207121037_full_test_2' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData3/ma_ajoseph/PIPNet/runs/PIPMIL_CAMELYON_pretrain_whole-backbone/checkpoints/net_pretrained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 207121037 --gpu_ids '' --num_workers 8 --bias
+# python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'convnext_tiny_26' --batch_size 1 --batch_size_pretrain 128 --epochs 20 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_SIL_1000_ATcl-207121037_full_convnext' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData3/ma_ajoseph/PIPNet/runs/PIPMIL_CAMELYON_pretrain_whole-backbone/checkpoints/net_pretrained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 207121037 --gpu_ids '' --num_workers 8 --bias
+# python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 1 --batch_size_pretrain 128 --epochs 20 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_SIL_1000_ATcl-207121037_full' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData3/ma_ajoseph/PIPNet/runs/PIPMIL_NEW_pretrain/checkpoints/net_pretrained' --freeze_epochs 10 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 207121037 --gpu_ids '' --num_workers 8 --bias
+# python main.py --dataset 'CAMELYON' --validation_size 0.0 --net 'resnet18' --batch_size 1 --batch_size_pretrain 128 --epochs 20 --optimizer 'Adam' --lr 0.05 --lr_block 0.0005 --lr_net 0.0005 --weight_decay 0.0 --log_dir './runs/PIPMIL_SIL_1000_ATcl-207121037_2' --num_features 0 --image_size 224 --state_dict_dir_net '/pfs/work7/workspace/scratch/ma_ajoseph-ProtoData3/ma_ajoseph/PIPNet/runs/PIPMIL_SIL_1000_ATcl-207121037/checkpoints/net_trained' --freeze_epochs 0 --dir_for_saving_images 'Visualization_results' --epochs_pretrain 0 --seed 207121037 --gpu_ids '' --num_workers 8 --bias
 
 # PREPROCESSING SAMPLES
 # python3 util/camelyon_resnet.py
