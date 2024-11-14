@@ -1,5 +1,4 @@
-# PIP-Net: Patch-Based Intuitive Prototypes for Interpretable Image Classification
-This repository presents the PyTorch code for PIP-Net (Patch-based Intuitive Prototypes Network). 
+# PIPMIL: Multiple Instance Learning Using Patch-Based Intuitive Prototypes for Whole-Slide Image Classification 
 
 **Main Paper at CVPR**: ["PIP-Net: Patch-Based Intuitive Prototypes for Interpretable Image Classification"](https://openaccess.thecvf.com/content/CVPR2023/papers/Nauta_PIP-Net_Patch-Based_Intuitive_Prototypes_for_Interpretable_Image_Classification_CVPR_2023_paper.pdf) introduces PIP-Net for natural images.\
 **Medical applications, data quality inspection and manual corrections**: [Interpreting and Correcting Medical Image Classification with PIP-Net](https://arxiv.org/abs/2307.10404), applies PIP-Net to X-rays and skin lesion images where biases can be fixed by (manually) disabling prototypes. \
